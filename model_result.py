@@ -18,7 +18,7 @@ def main():
     set_seed(seed)
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--fold', type=int, default=1)
-    parser.add_argument('--model_names', nargs='+', default=['ResNet18', 'Design6'],
+    parser.add_argument('--model_list', nargs='+', default=['ResNet18', 'Design6'],
                         help='List of model names to evaluate.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--val_bs', type=int, default=16, help='densenet cuda out of memory.')
@@ -65,7 +65,7 @@ def main():
     all_labels = None
     all_probs_list = []
     model_list = []
-    for model_name in args.model_names:
+    for model_name in args.model_list:
         print(f'Evaluating model {model_name}')
         weights_file_pattern = f"{model_name}_*_fold_{args.fold}_*.pth"
         weights_path_pattern = os.path.join("saved_models", args.task, weights_file_pattern)
