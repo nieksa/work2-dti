@@ -1,0 +1,1 @@
+python main.py --task NCvsPD --model_name ResNet18 --epochs 3 --lr 0.0001 --train_bs 2 --val_bs 2 --num_workers 1 --debug True

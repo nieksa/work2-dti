@@ -1,0 +1,8 @@
+data/PDvsNC
+data/PDvsSWEDD
+data/NCvsSWEDD
+logs/*
+saved_models/*
+runs/*
+Miniconda3-latest-Linux-x86_64.sh
+*.whl
