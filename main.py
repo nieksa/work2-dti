@@ -14,15 +14,10 @@ from eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 from collections import Counter
+from tqdm import tqdm
+from utils import set_seed
 
 seed = 42
-
-def set_seed(seed):
-    random.seed(seed)  # Python 随机种子
-    np.random.seed(seed)  # NumPy 随机种子
-    torch.manual_seed(seed)  # PyTorch 随机种子
-    torch.cuda.manual_seed(seed)  # CUDA 随机种子
-    torch.cuda.manual_seed_all(seed)  # 如果使用多 GPU，设置所有 GPU 的随机种子
 set_seed(seed)
 # 下面这两项取反可确保可重复性，但是降低训练速度
 torch.backends.cudnn.deterministic = False
@@ -33,24 +28,34 @@ args, device, log_file, timestamp = setup_training_environment()
 all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
                                          'precision', 'recall', 'specificity']}
 
-csv_file = 'path/to/data.csv'
-dataset = DTIDataset(csv_file, args)
 
-participant_ids = np.array(dataset.participant_ids)
-unique_ids = np.unique(participant_ids)
+# 记得删除
+args.epochs = 10
+args.debug = True
+args.model_name = "ResNet18"
 
-k_folds = 10
+
+csv_file = './data/ppmi/data.csv'
+
+# channels = ["06","07","FA","L1","L23m","MD"]
+channels = ["06"]
+dataset = DTIDataset(csv_file, args, channels=channels)
+
+subject_id = np.array(dataset.subject_id)
+unique_ids = np.unique(subject_id)
+
+k_folds = 2
 kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
 
 for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
-    logging.info(f'FOLD {fold+1} Start')
-    logging.info('--------------------------------')
+    logging.info(f'Fold {fold+1} Start')
+    logging.info('--------------------------------------------------------------------')
 
     train_participants = unique_ids[train_ids]
     val_participants = unique_ids[val_ids]
 
-    train_indices = np.where(np.isin(participant_ids, train_participants))[0]
-    val_indices = np.where(np.isin(participant_ids, val_participants))[0]
+    train_indices = np.where(np.isin(subject_id, train_participants))[0]
+    val_indices = np.where(np.isin(subject_id, val_participants))[0]
 
     train_subset = Subset(dataset, train_indices)
     val_subset = Subset(dataset, val_indices)
@@ -69,8 +74,6 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
         "+-------------------+-------+-------+"
     ]
-
-    logging.info(f"Fold {fold} Distribution:")
     for row in table:
         logging.info(row)
 
@@ -110,7 +113,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         epoch_preds = []
         epoch_labels = []
 
-        for batch_idx, (data, labels) in enumerate(train_loader):
+        for batch_idx, (data, labels) in tqdm(enumerate(train_loader)):
             step += 1
             # inputs, labels = batch_data[0].to(device), batch_data[1].to(device)
             labels = labels.long()
@@ -131,7 +134,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         epoch_loss /= step
         epoch_acc = accuracy_score(epoch_labels, epoch_preds)
         epoch_f1 = f1_score(epoch_labels, epoch_preds, average='binary')
-        epoch_precision = precision_score(epoch_labels, epoch_preds, average='binary')
+        epoch_precision = precision_score(epoch_labels, epoch_preds, average='binary', zero_division=0)
         epoch_recall = recall_score(epoch_labels, epoch_preds, average='binary')
         tn, fp, fn, tp = confusion_matrix(epoch_labels, epoch_preds).ravel()
         epoch_spec = tn / (tn + fp) if (tn + fp) > 0 else 0
@@ -147,16 +150,17 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
             # 这个部分决定我什么时候做验证，是否需要一个epoch就做一次验证呢?
             # 同时这个部分还负责保存当前表现最好的模型
             eval_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch + 1)
+
             save_best_model(model, eval_metrics, best_metric, best_metric_model, args, timestamp,
                             fold=fold, epoch=epoch, metric_name='accuracy')
+
             # 可以这样写，如果进入验证判断，就把验证代码全部重写入这里
             for batch_idx, (data, labels) in enumerate(val_loader):
                 pass
 
-    logging.info(f"Fold {fold + 1} end")
     avg_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch='FINAL')
     logging.info(
-        f"Fold {fold + 1} : {avg_metrics['accuracy']:.4f} | "
+        f"Accuracy : {avg_metrics['accuracy']:.4f} | "
         f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
         f"Kappa: {avg_metrics['kappa']:.4f} | "
         f"AUC: {avg_metrics['auc']:.4f} | "
@@ -165,6 +169,8 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         f"Recall: {avg_metrics['recall']:.4f} | "
         f"Spec: {avg_metrics['specificity']:.4f}"
     )
+    logging.info(f"Fold {fold + 1} end")
+    logging.info('--------------------------------------------------------------------\n')
 
     for metric, value in avg_metrics.items():
         all_metrics[metric].append(value)

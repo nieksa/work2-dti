@@ -68,7 +68,10 @@ def eval_model(model, dataloader, device, epoch):
     all_probs = torch.tensor(all_probs)
     cm = confusion_matrix(all_labels, all_preds)
     result = calculate_metrics(cm)
-    log_confusion_matrix(cm)
+
+    if epoch=='FINAL':
+        log_confusion_matrix(cm)
+
     accuracy = result['accuracy']
     balanced_accuracy = result['balanced_accuracy']
     kappa = result['kappa']
@@ -92,17 +95,17 @@ def eval_model(model, dataloader, device, epoch):
         'recall': recall,
         'specificity': specificity
     }
-    logging.info(
-        f"Epoch:{epoch} | "
-        f"Accuracy: {avg_metrics['accuracy']:.4f} | "
-        f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
-        f"Kappa: {avg_metrics['kappa']:.4f} | "
-        f"AUC: {avg_metrics['auc']:.4f} | "
-        f"F1: {avg_metrics['f1']:.4f} | "
-        f"Pre: {avg_metrics['precision']:.4f} | "
-        f"Recall: {avg_metrics['recall']:.4f} | "
-        f"Spec: {avg_metrics['specificity']:.4f}"
-    )
+    # logging.info(
+    #     f"Epoch:{epoch} | "
+    #     f"Accuracy: {avg_metrics['accuracy']:.4f} | "
+    #     f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
+    #     f"Kappa: {avg_metrics['kappa']:.4f} | "
+    #     f"AUC: {avg_metrics['auc']:.4f} | "
+    #     f"F1: {avg_metrics['f1']:.4f} | "
+    #     f"Pre: {avg_metrics['precision']:.4f} | "
+    #     f"Recall: {avg_metrics['recall']:.4f} | "
+    #     f"Spec: {avg_metrics['specificity']:.4f}"
+    # )
     return avg_metrics
 
 

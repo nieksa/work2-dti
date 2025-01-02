@@ -338,6 +338,7 @@ class InceptionI3d(nn.Module):
 if __name__ == "__main__":
     image_size = 128
     x = torch.Tensor(4, 1, image_size, image_size, image_size)
+    # x = torch.Tensor(4, 1, 91, 109, 91)
     print("x size: {}".format(x.size()))
 
     model = InceptionI3d(num_classes=2, spatial_squeeze=True,

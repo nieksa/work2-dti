@@ -4,20 +4,25 @@ import time
 import logging
 import argparse
 import torch
-
-
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
+from tqdm import tqdm
 def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
-    parser.add_argument('--seed', type=int, default=1337, help='Random seed for reproducibility.')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
-    parser.add_argument('--model_name', type=str, default='Design1', help='Name of the model to use.')
-    parser.add_argument('--task', type=str, default='PDvsNC', choices=['PDvsNC', 'PDvsSWEDD', 'NCvsSWEDD'])
+    parser.add_argument('--model_name', type=str, default='ResNet18', help='Name of the model to use.')
+    parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--train_bs', type=int, default=16, help='I3D C3D cuda out of memory.')
     parser.add_argument('--val_bs', type=int, default=16, help='densenet cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=16, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')
+    parser.add_argument('--data_dir', type=str, default='./data/ppmi/')
+
     # 解析命令行参数
     args = parser.parse_args()
 
@@ -60,3 +65,84 @@ def rename_log_file(log_file, avg_acc, task, model_name, timestamp):
     new_logfilename = os.path.join(log_dir, f'{model_name}_{timestamp}_{avg_acc:.2f}.log')
     os.rename(log_file, new_logfilename)
     return new_logfilename
+
+def set_seed(seed):
+    random.seed(seed)  # Python 随机种子
+    np.random.seed(seed)  # NumPy 随机种子
+    torch.manual_seed(seed)  # PyTorch 随机种子
+    torch.cuda.manual_seed(seed)  # CUDA 随机种子
+    torch.cuda.manual_seed_all(seed)  # 如果使用多 GPU，设置所有 GPU 的随机种子
+
+
+def evaluate_model(model, val_loader, device):
+    """
+    评估模型性能，返回真实标签和预测概率
+    """
+    model.eval()  # 设置模型为评估模式
+    all_labels = []
+    all_preds = []
+    all_probs = []
+
+    with torch.no_grad():
+        for data, labels in tqdm(val_loader, desc="Evaluating"):
+            data = data.to(device)
+            labels = labels.to(device)
+
+            # 前向传播
+            outputs = model(data)
+            probs = torch.softmax(outputs, dim=1)  # 获取概率
+            preds = torch.argmax(probs, dim=1)  # 获取预测类别
+
+            # 保存结果
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
+
+    return np.array(all_labels), np.array(all_preds), np.array(all_probs)
+
+def plot_confusion_matrix(labels, preds, class_names, model_name, save_dir):
+    """
+    绘制混淆矩阵并保存
+    """
+    cm = confusion_matrix(labels, preds)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.title(f"Confusion Matrix ({model_name})")
+    plt.savefig(os.path.join(save_dir, f"confusion_matrix_{model_name}.png"))
+    plt.close()
+
+def plot_roc_curve(labels, probs_list, model_names, save_dir):
+    """
+    绘制 ROC 曲线并保存
+    """
+    plt.figure(figsize=(8, 6))
+    for i, probs in enumerate(probs_list):
+        fpr, tpr, _ = roc_curve(labels, probs[:, 1])  # 假设二分类任务，使用正类的概率
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, lw=2, label=f'{model_names[i]} (AUC = {roc_auc:.2f})')
+
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
+    plt.legend(loc="lower right")
+    plt.savefig(os.path.join(save_dir, "roc_curve.png"))
+    plt.close()
+
+def plot_pr_curve(labels, probs_list, model_names, save_dir):
+    """
+    绘制 PR 曲线并保存
+    """
+    plt.figure(figsize=(8, 6))
+    for i, probs in enumerate(probs_list):
+        precision, recall, _ = precision_recall_curve(labels, probs[:, 1])  # 假设二分类任务，使用正类的概率
+        plt.plot(recall, precision, lw=2, label=f'{model_names[i]}')
+
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve")
+    plt.legend(loc="lower left")
+    plt.savefig(os.path.join(save_dir, "pr_curve.png"))
+    plt.close()
