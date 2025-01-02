@@ -1,6 +1,7 @@
 data/PDvsNC
 data/PDvsSWEDD
 data/NCvsSWEDD
+data/ppmi/*
 logs/*
 saved_models/*
 runs/*
