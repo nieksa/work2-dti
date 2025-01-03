@@ -1,7 +1,5 @@
 import torch
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
-import os
 from utils.utils import set_seed
 import glob
 import argparse
@@ -11,6 +9,10 @@ from torch.utils.data import DataLoader, Subset
 from data.dataset import DTIDataset
 from models.utils import create_model
 import time
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+from skimage import feature, filters
 
 # 定义 Hook 函数
 def hook_fn(module, input, output):
@@ -45,7 +47,77 @@ def grad_cam(model, input_tensor, target_class):
 
     return cam.detach().cpu().numpy()
 
-# 在 main 函数中使用
+def plot_cam(file_path, save_dir, args, input_image):
+    # 加载热激活图数据
+    cam_data = np.load(file_path, allow_pickle=True)
+    print("Heatmap shape:", cam_data.shape)  # 输出形状，例如 (91, 109, 91)
+
+    # 获取中间切面
+    depth, height, width = cam_data.shape
+    x_slice_cam = cam_data[depth // 2, ...]  # x 切面 (height, width)
+    y_slice_cam = cam_data[:, height // 2, :]  # y 切面 (depth, width)
+    z_slice_cam = cam_data[:, :, width // 2]  # z 切面 (depth, height)
+
+    # 获取输入图像的中间切面
+    x_slice_input = input_image[depth // 2, ...]  # x 切面 (height, width)
+    y_slice_input = input_image[:, height // 2, :]  # y 切面 (depth, width)
+    z_slice_input = input_image[:, :, width // 2]  # z 切面 (depth, height)
+
+    sigma = 0.5  # 高斯滤波的标准差，控制平滑程度
+    low_threshold = 0.1  # 低阈值
+    high_threshold = 0.2  # 高阈值
+
+    # 提取 x 切面的轮廓
+    x_edge = feature.canny(x_slice_input, sigma=sigma, low_threshold=low_threshold, high_threshold=high_threshold)
+    x_edge_fixed = x_edge.astype(float)  # 转换为浮点型
+    x_edge_fixed[x_edge] = 1.0  # 将轮廓固定为深色（1.0）
+
+    # 提取 y 切面的轮廓
+    y_edge = feature.canny(y_slice_input, sigma=sigma, low_threshold=low_threshold, high_threshold=high_threshold)
+    y_edge_fixed = y_edge.astype(float)  # 转换为浮点型
+    y_edge_fixed[y_edge] = 1.0  # 将轮廓固定为深色（1.0）
+
+    # 提取 z 切面的轮廓
+    z_edge = feature.canny(z_slice_input, sigma=sigma, low_threshold=low_threshold, high_threshold=high_threshold)
+    z_edge_fixed = z_edge.astype(float)  # 转换为浮点型
+    z_edge_fixed[z_edge] = 1.0  # 将轮廓固定为深色（1.0）
+
+    # 创建保存目录
+    os.makedirs(save_dir, exist_ok=True)
+
+    # 绘制并保存 x 切面
+    plt.figure()
+
+    # 边缘检测,这里最好能够增强原始图片的边缘。 三个切面都要增强
+    plt.imshow(x_edge_fixed, cmap='gray')  # 原始图像
+    plt.imshow(x_slice_cam, cmap='jet', alpha=0.9)  # 热力图，设置透明度
+    plt.colorbar()
+    plt.title(f"X Slice (Depth = {depth // 2})")
+    plt.axis('off')
+    plt.savefig(os.path.join(save_dir, f"{args.model_name}_fold{args.fold+1}_x_slice.png"))  # 保存 x 切面
+    plt.close()
+
+    # 绘制并保存 y 切面
+    plt.figure()
+    plt.imshow(y_edge_fixed, cmap='gray')  # 原始图像
+    plt.imshow(y_slice_cam, cmap='jet', alpha=0.9)  # 热力图，设置透明度
+    plt.colorbar()
+    plt.title(f"Y Slice (Height = {height // 2})")
+    plt.axis('off')
+    plt.savefig(os.path.join(save_dir, f"{args.model_name}_fold{args.fold+1}_y_slice.png"))  # 保存 y 切面
+    plt.close()
+
+    # 绘制并保存 z 切面
+    plt.figure()
+    plt.imshow(z_edge_fixed, cmap='gray')  # 原始图像
+    plt.imshow(z_slice_cam, cmap='jet', alpha=0.9)  # 热力图，设置透明度
+    plt.colorbar()
+    plt.title(f"Z Slice (Width = {width // 2})")
+    plt.axis('off')
+    plt.savefig(os.path.join(save_dir, f"{args.model_name}_fold{args.fold+1}_z_slice.png"))  # 保存 z 切面
+    plt.close()
+
+    print(f"切片图像已保存到: {save_dir}")
 def main():
     seed = 42
     set_seed(seed)
@@ -92,7 +164,7 @@ def main():
     weights_path = matching_files[0]
     model = create_model(model_name)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.load_state_dict(torch.load(weights_path, map_location=device))
+    model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
     model.to(device)
     model.eval()
 
@@ -100,22 +172,29 @@ def main():
     global feature_map
     feature_map = None
     hook = model.layer4.register_forward_hook(hook_fn)
-
     target_class = 1
-    for i, (inputs, labels) in enumerate(val_loader):
-        inputs = inputs.to(device)
-        labels = labels.to(device)
 
-        # 生成热激活图
-        cam = grad_cam(model, inputs, target_class)
+    first_sample = next(iter(val_loader))
+    inputs, labels = first_sample
+    inputs = inputs.to(device)
+    input_image = inputs[0].squeeze().cpu().numpy()
+    cam = grad_cam(model, inputs, target_class)
+    cam_data = cam[0].squeeze()
+    save_path = os.path.join(save_dir, f"{model_name}_fold{args.fold}_.npy")
+    np.save(save_path, cam_data)
 
-        # 保存热激活图数据
-        for j in range(inputs.shape[0]):  # 遍历 batch 中的每个样本
-            cam_data = cam[j].squeeze()  # 热激活图数据 (depth, height, width)
-            save_path = os.path.join(save_dir, f"{model_name}_fold{args.fold}_sample{i}_image{j}.npy")
-            np.save(save_path, cam_data)
+    # for i, (inputs, labels) in enumerate(val_loader):
+    #     inputs = inputs.to(device)
+    #     labels = labels.to(device)
+    #     cam = grad_cam(model, inputs, target_class)
+    #
+    #     for j in range(inputs.shape[0]):  # 遍历 batch 中的每个样本
+    #         cam_data = cam[j].squeeze()  # 热激活图数据 (depth, height, width)
+    #         save_path = os.path.join(save_dir, f"{model_name}_fold{args.fold}_sample{i}_image{j}.npy")
+    #         np.save(save_path, cam_data)
 
     hook.remove()
+    plot_cam(save_path,save_dir=save_dir, args=args, input_image=input_image)
 
 if __name__ == '__main__':
     main()

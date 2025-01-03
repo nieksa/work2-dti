@@ -7,17 +7,19 @@ import glob
 import torch.nn.functional as F
 
 class DTIDataset(Dataset):
-    def __init__(self, csv_file, args, channels, transform=None):
+    def __init__(self, csv_file, args, channels, transform=None, template="s6mm"):
         """
         初始化数据集
         :param csv_file: CSV 文件路径，包含样本路径、参与者ID和标签
         :param task: 任务类型，用于筛选特定标签的样本
+        :template: "s6mm" "2mm" "1mm"
         """
         self.data_info = pd.read_csv(csv_file, dtype={0: str})
         self.task = args.task
         self.root_dir = args.data_dir
         self.channels = channels
         self.transform = transform
+        self.template = template
         # 根据 task 筛选样本
         self.subject_id, self.event_id, self.labels = self._filter_samples()
 
@@ -75,7 +77,7 @@ class DTIDataset(Dataset):
         result = None
         # 根据idx找到subject_id 和 event_id 就可以找到目标路径，然后就根据self.channels里面指定的多种模态医学数据来加载，在第二个dim完成拼接
         for i, item in enumerate(self.channels):
-            specifi_file_pattern = f"{self.subject_id[idx]}_{item}*_4normalize_to_target_2mm_s6mm.nii.gz"
+            specifi_file_pattern = f"{self.subject_id[idx]}_{item}*{self.template}.nii.gz"
             file_path_pattern = os.path.join(self.root_dir, self.event_id[idx], "DTI_Results_GOOD", str(self.subject_id[idx]),
                                              "standard_space", specifi_file_pattern)
             matching_files = glob.glob(file_path_pattern)
@@ -101,6 +103,13 @@ class DTIDataset(Dataset):
         :param data: 输入数据，形状为 (channels, height, width, depth)
         :return: 调整后的数据，形状为 (channels, target_height, target_width, target_depth)
         """
+        if self.transform == 'boundary':
+            shape = data.shape
+            if shape[0] == 91:
+                data = data[5:-5,5:-5,5:-5]
+            if shape[0] == 182:
+                data = data[16:-16,16:-16,16:-16]
+            return data
         if self.transform == 'interpolation_91':
             data = data.unsqueeze(0)  # 添加 batch 维度
             data = F.interpolate(data, size=(91,91,91), mode='trilinear', align_corners=False)

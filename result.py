@@ -36,7 +36,9 @@ def main():
 
     # channels = ["06","07","FA","L1","L23m","MD"]
     channels = ["06"]
-    dataset = DTIDataset(args.csv_file, args, channels=channels)
+    # template = ["1mm" "2mm" "s6mm"]
+    template = "s6mm"
+    dataset = DTIDataset(args.csv_file, args, channels=channels, transform=None, template=template)
 
     subject_id = np.array(dataset.subject_id)
     unique_ids = np.unique(subject_id)
@@ -90,7 +92,6 @@ def main():
     if all_probs_list:
         plot_roc_curve(all_labels, all_probs_list, model_list, save_dir)
         plot_pr_curve(all_labels, all_probs_list, model_list, save_dir)
-
 
 if __name__ == "__main__":
     main()

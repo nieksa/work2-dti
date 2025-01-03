@@ -8,3 +8,4 @@ from .design7 import generate_model as dual_mix_1
 from .design8 import generate_model as generate_resnet_transformer_voxel
 from .design10 import generate_model as generate_MDL
 from .design11 import generate_model as generate_MDL_1_branch
+from .dti_design1 import generate_model as resnet_with_mil
