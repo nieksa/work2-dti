@@ -1,9 +1,9 @@
-data/PDvsNC
-data/PDvsSWEDD
-data/NCvsSWEDD
-data/ppmi/*
-logs/*
+data/*/
+logs/*/
 saved_models/*
 runs/*
 Miniconda3-latest-Linux-x86_64.sh
 *.whl
+results/*/
+.idea/
+__pycache__/

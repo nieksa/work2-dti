@@ -86,13 +86,13 @@ class DTIDataset(Dataset):
             data = img.get_fdata()
             tensor = torch.from_numpy(data).float()
             tensor = tensor.unsqueeze(0)
+            if self.transform:
+                tensor = self._transform_shape(tensor)
             if i == 0:
                 result = tensor
             else:
                 result = torch.cat((result, tensor), dim=0)  # 在通道维度拼接
 
-            if self.transform:
-                result = self._transform_shape(result)
         return result
 
     def _transform_shape(self, data):
@@ -101,11 +101,28 @@ class DTIDataset(Dataset):
         :param data: 输入数据，形状为 (channels, height, width, depth)
         :return: 调整后的数据，形状为 (channels, target_height, target_width, target_depth)
         """
-        if self.transform == 'cut_to_n3':
-            data = data.unsqueeze(0)  # 添加批次维度，变为 (1, channels, height, width, depth)
-            data = F.interpolate(data, size=self.target_shape, mode='trilinear', align_corners=False)
-            data = data.squeeze(0)  # 移除批次维度，变为 (channels, target_height, target_width, target_depth)
+        if self.transform == 'interpolation_91':
+            data = data.unsqueeze(0)  # 添加 batch 维度
+            data = F.interpolate(data, size=(91,91,91), mode='trilinear', align_corners=False)
+            data = data.squeeze(0)  # 去掉 batch 维度
             return data
+        if self.transform == 'crop_91':
+            _, height, width, depth = data.shape
+            target_height, target_width, target_depth = 91
+
+            # 计算裁剪的起始和结束索引
+            start_height = (height - target_height) // 2
+            start_width = (width - target_width) // 2
+            start_depth = (depth - target_depth) // 2
+
+            end_height = start_height + target_height
+            end_width = start_width + target_width
+            end_depth = start_depth + target_depth
+
+            # 裁剪数据
+            data = data[:, start_height:end_height, start_width:end_width, start_depth:end_depth]
+            return data
+
 # 当前可以选择的shape是 91, 109, 91
 # 或者是 182， 218， 182
 # 有没有可能就是说使用一个transforme函数来调整dataset中data的shape增强泛化性呢？

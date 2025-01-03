@@ -7,7 +7,7 @@ import argparse
 from models.utils import create_model
 import os
 import glob
-from utils import set_seed, plot_confusion_matrix, evaluate_model, plot_pr_curve, plot_roc_curve
+from utils.utils import set_seed, plot_confusion_matrix, evaluate_model, plot_pr_curve, plot_roc_curve
 import time
 
 # 下面这两项取反可确保可重复性，但是降低训练速度
@@ -16,7 +16,7 @@ torch.backends.cudnn.benchmark = True  # CuDNN 的自动优化
 def main():
     seed = 42
     set_seed(seed)
-    parser = argparse.ArgumentParser(description='Training script for models.')
+    parser = argparse.ArgumentParser(description='Evaluating models.')
     parser.add_argument('--fold', type=int, default=1)
     parser.add_argument('--model_list', nargs='+', default=['ResNet18', 'Design6'],
                         help='List of model names to evaluate.')

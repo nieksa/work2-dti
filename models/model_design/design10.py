@@ -612,13 +612,13 @@ class MDL_Net(nn.Module):
     def forward(self, x):
         # Upsample and Split Multimodal Feature
         # x = F.interpolate(x, [128, 128, 128], mode='trilinear')
-        # x1 = x[:, 0, :, :, :]
-        # x1 = torch.unsqueeze(x1, dim=1)    # The unsqueeze operation is to add channel of single-modal dataset
-        # x2 = x[:, 1, :, :, :]
-        # x2 = torch.unsqueeze(x2, dim=1)
-        # x3 = x[:, 2, :, :, :]
-        # x3 = torch.unsqueeze(x3, dim=1)
-        x1 = x2 = x3 = x
+        x1 = x[:, 0, :, :, :]
+        x1 = torch.unsqueeze(x1, dim=1)    # The unsqueeze operation is to add channel of single-modal dataset
+        x2 = x[:, 1, :, :, :]
+        x2 = torch.unsqueeze(x2, dim=1)
+        x3 = x[:, 2, :, :, :]
+        x3 = torch.unsqueeze(x3, dim=1)
+        # x1 = x2 = x3 = x
         # Extract single modal feature
         x1_s1, x1_s2, x1_s3, x1_s4 = self.feature_forward(x1)
         x2_s1, x2_s2, x2_s3, x2_s4 = self.feature_forward(x2)
@@ -732,7 +732,7 @@ if __name__ == '__main__':
     # print('time:{}s'.format(time_over - time_start))
 
     # 简易测试 
-    x = torch.randn(3,1,128,128,128)
+    x = torch.randn(3,3,128,128,128)
     model = generate_model(model_depth=18,in_planes=1,num_classes=2)
     out = model(x)
     print(out)

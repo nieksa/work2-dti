@@ -2,20 +2,18 @@ import torch
 from data import DTIDataset
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, CosineAnnealingLR, LambdaLR
-import torch.backends.cudnn as cudnn
-import random
+from torch.optim.lr_scheduler import StepLR
 from models import create_model
-from utils import setup_training_environment, rename_log_file
+from utils.utils import setup_training_environment, rename_log_file
 import numpy as np
 import logging
 from statistics import mean, stdev
-from eval import eval_model, save_best_model
+from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix
 from collections import Counter
 from tqdm import tqdm
-from utils import set_seed
+from utils.utils import set_seed
 
 seed = 42
 set_seed(seed)
@@ -39,7 +37,7 @@ csv_file = './data/ppmi/data.csv'
 
 # channels = ["06","07","FA","L1","L23m","MD"]
 channels = ["06"]
-dataset = DTIDataset(csv_file, args, channels=channels)
+dataset = DTIDataset(csv_file, args, channels=channels, transform='interpolation_91')
 
 subject_id = np.array(dataset.subject_id)
 unique_ids = np.unique(subject_id)
