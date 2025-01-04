@@ -124,7 +124,7 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluating models.')
     parser.add_argument('--fold', type=int, default=1)
     parser.add_argument('--model_name', type=str, default='ResNet18')
-    parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
+    parser.add_argument('--task', type=str, default='NCvsProdromal', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--val_bs', type=int, default=16, help='densenet cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')

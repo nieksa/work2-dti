@@ -97,8 +97,15 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     max_epochs = args.epochs
 
     # 验证开始轮次和验证间隔
-    val_start = 1
+    val_start = 30
     val_interval = 1
+
+    # 早停设置
+    patience = 5
+    min_delta = 0.001
+    best_val_metric = 0
+    epochs_without_improvement = 0
+    best_model_weights = None
 
     for epoch in range(max_epochs):
         model.train()
@@ -109,8 +116,8 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
 
         for batch_idx, (data, labels) in tqdm(enumerate(train_loader)):
             step += 1
-            # inputs, labels = batch_data[0].to(device), batch_data[1].to(device)
-            labels = labels.long()
+            data = data.to(device)
+            labels = labels.to(device).long()
             optimizer.zero_grad()
             outputs = model(data)
             loss = loss_function(outputs, labels)
@@ -141,16 +148,22 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         logging.info(f"Train Specificity: {epoch_spec:.4f}")
 
         if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
-            # 这个部分决定我什么时候做验证，是否需要一个epoch就做一次验证呢?
-            # 同时这个部分还负责保存当前表现最好的模型
             eval_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch + 1)
+            current_val_metric = eval_metrics['accuracy']
+            if current_val_metric > best_val_metric + min_delta:
+                epochs_without_improvement = 0
+                best_model_weights = model.state_dict().copy()
+                save_best_model(model, eval_metrics, best_metric, best_metric_model, args, timestamp,
+                                fold=fold, epoch=epoch+1, metric_name='accuracy')
+                best_val_metric = current_val_metric
+            else:
+                epochs_without_improvement += 1
 
-            save_best_model(model, eval_metrics, best_metric, best_metric_model, args, timestamp,
-                            fold=fold, epoch=epoch, metric_name='accuracy')
+        if epochs_without_improvement >= patience:
+            model.load_state_dict(best_model_weights)
+            logging.info(f"Early Stopping at Epoch {epoch + 1}. Val Metric did not improve for {patience} epochs.")
+            break
 
-            # 可以这样写，如果进入验证判断，就把验证代码全部重写入这里
-            for batch_idx, (data, labels) in enumerate(val_loader):
-                pass
 
     avg_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch='FINAL')
     logging.info(
