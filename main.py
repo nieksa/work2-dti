@@ -29,8 +29,8 @@ all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa
 
 csv_file = './data/ppmi/data.csv'
 
-# channels = ["06","07","FA","L1","L23m","MD"]
-channels = ["06"]
+# channels = ["FA","L1","L23m","06","07","MD"]
+channels = ["FA"]
 # template = ["1mm" "2mm" "s6mm"]
 template = "s6mm"
 dataset = DTIDataset(csv_file, args, channels=channels, transform=None, template=template)
@@ -38,7 +38,7 @@ dataset = DTIDataset(csv_file, args, channels=channels, transform=None, template
 subject_id = np.array(dataset.subject_id)
 unique_ids = np.unique(subject_id)
 
-k_folds = 10
+k_folds = 5
 kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
 
 for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):

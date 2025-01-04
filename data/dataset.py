@@ -24,7 +24,7 @@ class DTIDataset(Dataset):
         self.subject_id, self.event_id, self.labels = self._filter_samples()
 
         self.debug = args.debug
-        self.debug_size = 10
+        self.debug_size = 20
         if self.debug:
             self.subject_id = self.subject_id[:self.debug_size]
             self.event_id = self.event_id[:self.debug_size]
