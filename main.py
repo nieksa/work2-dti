@@ -105,7 +105,8 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     min_delta = 0.001
     best_val_metric = 0
     epochs_without_improvement = 0
-    best_model_weights = None
+    # best_model_weights = model.state_dict().copy()
+    result_metric = None
 
     for epoch in range(max_epochs):
         model.train()
@@ -151,21 +152,22 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
             eval_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch + 1)
             current_val_metric = eval_metrics['accuracy']
             if current_val_metric > best_val_metric + min_delta:
+                best_val_metric = current_val_metric
                 epochs_without_improvement = 0
-                best_model_weights = model.state_dict().copy()
+                # best_model_weights = model.state_dict().copy()
                 save_best_model(model, eval_metrics, best_metric, best_metric_model, args, timestamp,
                                 fold=fold, epoch=epoch+1, metric_name='accuracy')
-                best_val_metric = current_val_metric
+                result_metric = eval_metrics
             else:
                 epochs_without_improvement += 1
 
         if epochs_without_improvement >= patience:
-            model.load_state_dict(best_model_weights)
             logging.info(f"Early Stopping at Epoch {epoch + 1}. Val Metric did not improve for {patience} epochs.")
             break
 
-
-    avg_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch='FINAL')
+    # model.load_state_dict(best_model_weights)
+    # avg_metrics = eval_model(model=model, dataloader=val_loader, device=device, epoch='FINAL')
+    avg_metrics = result_metric
     logging.info(
         f"Accuracy : {avg_metrics['accuracy']:.4f} | "
         f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
