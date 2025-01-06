@@ -12,8 +12,8 @@ from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
 
-# channels = ["FA","L1","L23m","06","07","MD"]
-channels = ["FA"]
+channels = ["FA","L1","L23m","06","07","MD"]
+# channels = ["FA"]
 transform = None
 # template = ["1mm" "2mm" "s6mm"]
 template = "1mm"
@@ -88,9 +88,9 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
             if (epoch+1) > early_stop_start and current_val_metric > (best_val_metric + min_delta):
                 best_val_metric = current_val_metric
                 epochs_without_improvement = 0
-                # best_model_weights = model.state_dict().copy()
-                # save_best_model(model, eval_metrics, best_metric, best_metric_model, args, timestamp,
-                #                 fold=fold, epoch=epoch+1, metric_name='accuracy')
+                best_model_weights = model.state_dict().copy()
+                save_best_model(best_model_weights, eval_metrics, best_metric, best_metric_model, args, timestamp,
+                                fold=fold, epoch=epoch+1, metric_name='accuracy')
                 result_metric = eval_metrics
                 result_cm = cm
                 result_labels = all_labels

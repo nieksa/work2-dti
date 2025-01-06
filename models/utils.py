@@ -32,7 +32,7 @@ def create_model(model_name):
 
 if __name__ == '__main__':
     model = create_model('DTI_design1')
-    x = torch.rand(4, 1, 91, 109, 91)
+    x = torch.rand(4, 1, 182, 218, 182)
     label = torch.randint(0, 2, (4,))
     out = model(x)
     print(out)
