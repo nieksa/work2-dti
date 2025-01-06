@@ -1,24 +1,23 @@
-# utils.py
 import os
 import time
 import logging
 import argparse
 import torch
 import random
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
 from tqdm import tqdm
+import json
+import numpy as np
 def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
-    parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
     parser.add_argument('--model_name', type=str, default='ResNet18', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
-    parser.add_argument('--train_bs', type=int, default=16, help='I3D C3D cuda out of memory.')
-    parser.add_argument('--val_bs', type=int, default=16, help='densenet cuda out of memory.')
+    parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=16, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')
     parser.add_argument('--data_dir', type=str, default='./data/ppmi/')
@@ -146,3 +145,31 @@ def plot_pr_curve(labels, probs_list, model_names, save_dir):
     plt.legend(loc="lower left")
     plt.savefig(os.path.join(save_dir, "pr_curve.png"))
     plt.close()
+
+
+# 在每一折结束时记录 labels, preds, probs
+def log_fold_results(fold, labels, preds, probs):
+    """
+    将每一折的结果记录到日志文件中。
+
+    参数:
+    - fold: 当前折的编号
+    - labels: 真实标签
+    - preds: 预测标签
+    - probs: 预测概率
+    """
+    # 将 numpy 数组转换为 Python 列表
+    labels_list = labels.tolist()
+    preds_list = preds.tolist()
+    probs_list = probs.tolist()
+
+    # 构建日志消息
+    log_message = {
+        'fold': fold,
+        'labels': labels_list,
+        'preds': preds_list,
+        'probs': probs_list
+    }
+
+    # 将日志消息转换为 JSON 字符串并记录
+    logging.info(json.dumps(log_message))

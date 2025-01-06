@@ -43,6 +43,7 @@ def calculate_metrics(cm):
         'precision' : precision,
         'f1': f1
     }
+
 def eval_model(model, dataloader, device, epoch):
     model.eval()
     all_labels = []
@@ -53,7 +54,6 @@ def eval_model(model, dataloader, device, epoch):
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
 
-            # 模型推理
             outputs = model(inputs)
             probs = outputs.softmax(dim=1)
             _, preds = torch.max(outputs, 1)
@@ -68,9 +68,6 @@ def eval_model(model, dataloader, device, epoch):
     all_probs = torch.tensor(all_probs)
     cm = confusion_matrix(all_labels, all_preds)
     result = calculate_metrics(cm)
-
-    if epoch=='FINAL':
-        log_confusion_matrix(cm)
 
     accuracy = result['accuracy']
     balanced_accuracy = result['balanced_accuracy']
@@ -106,7 +103,7 @@ def eval_model(model, dataloader, device, epoch):
         f"Recall: {avg_metrics['recall']:.4f} | "
         f"Spec: {avg_metrics['specificity']:.4f}"
     )
-    return avg_metrics
+    return avg_metrics, cm, all_labels, all_preds, all_probs
 
 
 def save_best_model(model, eval_metric, best_metric, best_metric_model, args, timestamp, fold, epoch, metric_name):

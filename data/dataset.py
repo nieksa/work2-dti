@@ -5,6 +5,10 @@ from torch.utils.data import Dataset
 import os
 import glob
 import torch.nn.functional as F
+import numpy as np
+from torch.utils.data import Subset, DataLoader
+from collections import Counter
+import logging
 
 class DTIDataset(Dataset):
     def __init__(self, csv_file, args, channels, transform=None, template="s6mm"):
@@ -132,6 +136,61 @@ class DTIDataset(Dataset):
             data = data[:, start_height:end_height, start_width:end_width, start_depth:end_depth]
             return data
 
+
+def create_dataloaders(dataset, subject_id, unique_ids, train_ids, val_ids, bs):
+    """
+    根据给定的训练和验证ID创建训练和验证DataLoader。
+
+    参数:
+    - dataset: 原始数据集
+    - subject_id: 数据集中每个样本对应的参与者ID
+    - unique_ids: 所有唯一的参与者ID
+    - train_ids: 训练集的参与者ID索引
+    - val_ids: 验证集的参与者ID索引
+    - bs: 训练集的批量大小
+
+    返回:
+    - train_loader: 训练集的DataLoader
+    - val_loader: 验证集的DataLoader
+    """
+    # 获取训练和验证的参与者ID
+    train_participants = unique_ids[train_ids]
+    val_participants = unique_ids[val_ids]
+
+    # 获取训练和验证的样本索引
+    train_indices = np.where(np.isin(subject_id, train_participants))[0]
+    val_indices = np.where(np.isin(subject_id, val_participants))[0]
+
+    # 创建训练和验证子集
+    train_subset = Subset(dataset, train_indices)
+    val_subset = Subset(dataset, val_indices)
+
+    # 获取训练和验证的标签
+    train_labels = [train_subset.dataset[i][1] for i in train_subset.indices]
+    val_labels = [val_subset.dataset[i][1] for i in val_subset.indices]
+
+    # 统计标签分布
+    train_counter = Counter(train_labels)
+    val_counter = Counter(val_labels)
+
+    # 打印标签分布表
+    table = [
+        "+-------------------+-------+-------+",
+        "|                   | Label 0 | Label 1 |",
+        "+-------------------+-------+-------+",
+        f"| Train            |   {train_counter[0]}    |   {train_counter[1]}    |",
+        "+-------------------+-------+-------+",
+        f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
+        "+-------------------+-------+-------+"
+    ]
+    for row in table:
+        logging.info(row)
+
+    # 创建DataLoader
+    train_loader = DataLoader(train_subset, batch_size=bs, shuffle=True)
+    val_loader = DataLoader(val_subset, batch_size=bs, shuffle=False)
+
+    return train_loader, val_loader
 # 当前可以选择的shape是 91, 109, 91
 # 或者是 182， 218， 182
 # 有没有可能就是说使用一个transforme函数来调整dataset中data的shape增强泛化性呢？

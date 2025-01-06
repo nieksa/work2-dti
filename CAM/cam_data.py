@@ -122,9 +122,9 @@ def main():
     seed = 42
     set_seed(seed)
     parser = argparse.ArgumentParser(description='Evaluating models.')
-    parser.add_argument('--fold', type=int, default=1)
+    parser.add_argument('--fold', type=int, default=3)
     parser.add_argument('--model_name', type=str, default='ResNet18')
-    parser.add_argument('--task', type=str, default='NCvsProdromal', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
+    parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--val_bs', type=int, default=16, help='densenet cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')
@@ -139,13 +139,13 @@ def main():
 
     args.debug = True
 
-    channels = ["06"]
+    channels = ["FA"]
     dataset = DTIDataset(args.csv_file, args, channels=channels)
 
     subject_id = np.array(dataset.subject_id)
     unique_ids = np.unique(subject_id)
 
-    k_folds = 2
+    k_folds = 5
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
     for fold, (train_idx, val_idx) in enumerate(kfold.split(unique_ids)):
         if fold + 1 == args.fold:
