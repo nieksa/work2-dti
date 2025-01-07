@@ -5,39 +5,39 @@ from torch.nn import functional as F
 from models.model_design.module.MIL import MIL
 
 class CrossStageFusionModule(nn.Module):
-    def __init__(self, feature_dim=128):
+    def __init__(self, feature_dim=512):
         super(CrossStageFusionModule, self).__init__()
         self.feature_dim = feature_dim
 
         # 用于融合的特征变换层
         self.fc_mil2 = nn.Linear(feature_dim, feature_dim)
         self.fc_mil3 = nn.Linear(feature_dim, feature_dim)
-        self.fc_mil4 = nn.Linear(feature_dim, feature_dim)
+        # self.fc_mil4 = nn.Linear(feature_dim, feature_dim)
         self.fc_x4 = nn.Linear(feature_dim, feature_dim)
 
         # 注意力权重计算
         self.attention = nn.Sequential(
-            nn.Linear(feature_dim * 4, feature_dim * 4),  # 输入是拼接后的特征
+            nn.Linear(feature_dim * 3, feature_dim * 3),  # 输入是拼接后的特征
             nn.ReLU(),
-            nn.Linear(feature_dim * 4, 4),  # 输出4个权重（对应mil2, mil3, mil4, x4）
+            nn.Linear(feature_dim * 3, 3),  # 输出4个权重（对应mil2, mil3, mil4, x4）
             nn.Softmax(dim=1)  # 对权重进行归一化
         )
 
         # 最终的特征变换层
         self.fc_final = nn.Linear(feature_dim, feature_dim)
 
-    def forward(self, mil2, mil3, mil4, x4):
+    def forward(self, mil2, mil3, x4):
         # 输入形状: mil2, mil3, mil4, x4 都是 [batch_size, feature_dim]
         batch_size = mil2.size(0)
 
         # 对每个特征进行变换
         mil2_transformed = self.fc_mil2(mil2)  # [batch_size, feature_dim]
         mil3_transformed = self.fc_mil3(mil3)  # [batch_size, feature_dim]
-        mil4_transformed = self.fc_mil4(mil4)  # [batch_size, feature_dim]
+        # mil4_transformed = self.fc_mil4(mil4)  # [batch_size, feature_dim]
         x4_transformed = self.fc_x4(x4)  # [batch_size, feature_dim]
 
         # 拼接所有特征
-        features = torch.cat([mil2_transformed, mil3_transformed, mil4_transformed, x4_transformed], dim=1)  # [batch_size, feature_dim * 4]
+        features = torch.cat([mil2_transformed, mil3_transformed, x4_transformed], dim=1)  # [batch_size, feature_dim * 4]
 
         # 计算注意力权重
         attention_weights = self.attention(features)  # [batch_size, 4]
@@ -47,8 +47,7 @@ class CrossStageFusionModule(nn.Module):
         weighted_features = (
             attention_weights[:, 0] * mil2_transformed +
             attention_weights[:, 1] * mil3_transformed +
-            attention_weights[:, 2] * mil4_transformed +
-            attention_weights[:, 3] * x4_transformed
+            attention_weights[:, 2] * x4_transformed
         )  # [batch_size, feature_dim]
 
         # 最终特征变换
@@ -208,17 +207,17 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         # self.fc = nn.Linear(block_inplanes[2] * block.expansion, n_classes)
 
-        self.fc = nn.Linear(128, n_classes)
+        self.fc = nn.Linear(512, n_classes)
 
         # Local positive detector
-        self.mil2 = MIL(channels=128, num_instances=12*14*12)
-        self.mil3 = MIL(channels=256, num_instances=6*7*6)
-        self.mil4 = MIL(channels=512, num_instances=3*4*3)
+        self.mil2 = MIL(channels=512, num_instances=23*28*23)
+        self.mil3 = MIL(channels=1024, num_instances=12*14*12)
+        # self.mil4 = MIL(channels=2048, num_instances=6*7*6)
 
-        self.resnet_out_fc = nn.Linear(block_inplanes[3] * block.expansion,128)
+        self.resnet_out_fc = nn.Linear(block_inplanes[3] * block.expansion,512)
 
         # Cross stage fusion module
-        self.csf = CrossStageFusionModule(feature_dim=128)
+        self.csf = CrossStageFusionModule(feature_dim=512)
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -277,15 +276,15 @@ class ResNet(nn.Module):
         return x1, x2, x3, x4
 
     def forward(self, x):
-        _, x2, x3, x4 = self.feature_forward(x)
+        x1, x2, x3, x4 = self.feature_forward(x)    # 256 46 55 46 , 512 23 28 23, 1024 12 14 12, 2048 6 7 6
         mil2 = self.mil2(x2)
         mil3 = self.mil3(x3)
-        mil4 = self.mil4(x4)
+        # mil4 = self.mil4(x4)
 
         x4 = self.avgpool(x4)
         x4 = x4.view(x4.size(0), -1)
         x4 = self.resnet_out_fc(x4)
-        x = self.csf(mil2, mil3, mil4, x4) # 输入3个 batch, 128 的tensor 通过一个复杂的 cross stage fusion module变成一个 batch, 128的tensor
+        x = self.csf(mil2, mil3, x4) # 输入3个 batch, 512 的tensor 通过一个复杂的 cross stage fusion module变成一个 batch, 512的tensor
         return self.fc(x)
 
 
@@ -313,12 +312,10 @@ def generate_model(model_depth, **kwargs):
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    # image_size = 128
-    # x = torch.Tensor(1, 1, image_size, image_size, image_size)
-    x = torch.Tensor(1,1,91,109,91)
+    x = torch.Tensor(1,6,182,218,182)
     x = x.to(device)
     print("x size: {}".format(x.size()))
-    model = generate_model(18)
+    model = generate_model(50, n_input_channels=6, n_classes=2)
     out1 = model(x)
     print("out size: {}".format(out1.size()))
     print(out1)

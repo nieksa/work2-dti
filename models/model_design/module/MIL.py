@@ -47,7 +47,7 @@ class MIL(nn.Module):
         self.instance_score = InstanceScore(3)
 
         self.relu = nn.ReLU()
-        self.fc = nn.Linear(num_instances, 128)
+        self.fc = nn.Linear(num_instances, 512)
     def forward(self, x):
         # x的形状为 [batch_size, channels, x,y,z]
         batch_size, channels, height,width,depth = x.shape

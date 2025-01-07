@@ -1,5 +1,6 @@
 import torch
-from data import DTIDataset, create_dataloaders
+from data import DTIDataset, CenterCrop, IntervalSlice
+from collections import Counter
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
 from torch.optim.lr_scheduler import StepLR
@@ -11,12 +12,20 @@ from statistics import mean, stdev
 from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
+from torchvision import transforms
+from collections import defaultdict
+args, device, log_file, timestamp = setup_training_environment()
 
-# channels = ["FA","L1","L23m","06","07","MD"]
-channels = ["FA"]
-transform = None
-# template = ["1mm" "2mm" "s6mm"]
+
+channels = ["FA","L1","MD"]
+transform = transforms.Compose([
+    CenterCrop(target_size=186),
+    IntervalSlice(target_size=128)
+])
 template = "1mm"
+csv_file = './data/ppmi/data.csv'
+dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
+
 
 seed = 42
 set_seed(seed)
@@ -25,24 +34,57 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = True  # CuDNN 的自动优化
 
 
-args, device, log_file, timestamp = setup_training_environment()
+
 all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
                                          'precision', 'recall', 'specificity']}
 
-csv_file = './data/ppmi/data.csv'
-
-dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
 
 subject_id = np.array(dataset.subject_id)
 unique_ids = np.unique(subject_id)
-
 k_folds = 5
 kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+
+subject_to_indices = defaultdict(list)
+for idx, subject in enumerate(subject_id):
+    subject_to_indices[subject].append(idx)
 
 for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     logging.info(f'Fold {fold+1} Start')
     logging.info('--------------------------------------------------------------------')
-    train_loader, val_loader = create_dataloaders(dataset, subject_id, unique_ids, train_ids, val_ids, args.bs)
+
+    train_participants = unique_ids[train_ids]
+    val_participants = unique_ids[val_ids]
+
+    train_indices = np.concatenate([subject_to_indices[subject] for subject in train_participants])
+    val_indices = np.concatenate([subject_to_indices[subject] for subject in val_participants])
+
+    train_subset = Subset(dataset, train_indices)
+    val_subset = Subset(dataset, val_indices)
+
+    if fold == 0:
+        train_labels = dataset.labels[train_indices]
+        val_labels = dataset.labels[val_indices]
+
+        # 统计标签分布
+        train_counter = Counter(train_labels)
+        val_counter = Counter(val_labels)
+
+        # 打印标签分布表
+        table = [
+            "+-------------------+-------+-------+",
+            "|                   | Label 0 | Label 1 |",
+            "+-------------------+-------+-------+",
+            f"| Train            |   {train_counter[0]}    |   {train_counter[1]}    |",
+            "+-------------------+-------+-------+",
+            f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
+            "+-------------------+-------+-------+"
+        ]
+        for row in table:
+            logging.info(row)
+
+    # 创建DataLoader
+    train_loader = DataLoader(train_subset, batch_size=args.bs, shuffle=True)
+    val_loader = DataLoader(val_subset, batch_size=args.bs, shuffle=False)
 
     model = create_model(args.model_name).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)

@@ -4,7 +4,7 @@ import torch
 import logging
 import os
 from tabulate import tabulate
-
+from tqdm import tqdm
 def log_confusion_matrix(cm):
     """
     使用 tabulate 库将混淆矩阵记录到日志文件中
@@ -50,7 +50,7 @@ def eval_model(model, dataloader, device, epoch):
     all_preds = []
     all_probs = []
     with torch.no_grad():
-        for data in dataloader:
+        for data in tqdm(dataloader):
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
 

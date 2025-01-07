@@ -1,22 +1,25 @@
 import pandas as pd
 import nibabel as nib
-import torch
 from torch.utils.data import Dataset
 import os
 import glob
-import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import Subset, DataLoader
 from collections import Counter
 import logging
+import torch
+import torch.nn.functional as F
+from torchvision import transforms
 
 class DTIDataset(Dataset):
     def __init__(self, csv_file, args, channels, transform=None, template="s6mm"):
         """
         初始化数据集
         :param csv_file: CSV 文件路径，包含样本路径、参与者ID和标签
-        :param task: 任务类型，用于筛选特定标签的样本
-        :template: "s6mm" "2mm" "1mm"
+        :param args: 参数对象，包含任务类型和数据目录等信息
+        :param channels: 使用的模态通道列表
+        :param transform: 数据变换函数或变换列表
+        :param template: 模板类型，如 "s6mm", "2mm", "1mm"
         """
         self.data_info = pd.read_csv(csv_file, dtype={0: str})
         self.task = args.task
@@ -37,13 +40,11 @@ class DTIDataset(Dataset):
     def _filter_samples(self):
         """
         根据 task 筛选样本，并转换标签为 0 和 1
-        :return: 筛选后的 file_paths, participant_ids, labels
+        :return: 筛选后的 subject_id, event_id, labels
         """
-        # 根据 task 筛选样本
         if self.task == 'NCvsPD':
-            # 只保留标签为 1 和 2 的样本，并将标签转换为 0 和 1
-            mask = self.data_info.iloc[:, 2].isin([1, 2])  # 假设第三列是标签
-            labels = self.data_info.iloc[:, 2].replace({1: 1, 2: 0})  # 将 1 转换为 0，2 转换为 1
+            mask = self.data_info.iloc[:, 2].isin([1, 2])
+            labels = self.data_info.iloc[:, 2].replace({1: 1, 2: 0})
         elif self.task == 'NCvsProdromal':
             mask = self.data_info.iloc[:, 2].isin([2, 4])
             labels = self.data_info.iloc[:, 2].replace({2: 0, 4: 1})
@@ -53,7 +54,6 @@ class DTIDataset(Dataset):
         else:
             raise ValueError(f"Unknown task: {self.task}")
 
-        # 返回筛选后的数据
         subject_id = self.data_info.iloc[:, 0].values[mask]
         event_id = self.data_info.iloc[:, 1].values[mask]
         labels = labels.values[mask]
@@ -72,6 +72,9 @@ class DTIDataset(Dataset):
         data = self._load_niigz(idx)
         label = self.labels[idx]
 
+        if self.transform:
+            data = self.transform(data)  # 应用数据变换
+
         return data, label
 
     def _load_niigz(self, idx):
@@ -79,7 +82,6 @@ class DTIDataset(Dataset):
         加载 .nii.gz 文件
         """
         result = None
-        # 根据idx找到subject_id 和 event_id 就可以找到目标路径，然后就根据self.channels里面指定的多种模态医学数据来加载，在第二个dim完成拼接
         for i, item in enumerate(self.channels):
             specifi_file_pattern = f"{self.subject_id[idx]}_{item}*{self.template}.nii.gz"
             file_path_pattern = os.path.join(self.root_dir, self.event_id[idx], "DTI_Results_GOOD", str(self.subject_id[idx]),
@@ -87,13 +89,11 @@ class DTIDataset(Dataset):
             matching_files = glob.glob(file_path_pattern)
             if not matching_files:
                 raise FileNotFoundError(f"No file found matching pattern: {file_path_pattern}")
-            file_path = matching_files[0]  # 取第一个匹配的文件
+            file_path = matching_files[0]
             img = nib.load(file_path)
             data = img.get_fdata()
             tensor = torch.from_numpy(data).float()
-            tensor = tensor.unsqueeze(0)
-            if self.transform:
-                tensor = self._transform_shape(tensor)
+            tensor = tensor.unsqueeze(0)  # 添加通道维度
             if i == 0:
                 result = tensor
             else:
@@ -101,96 +101,89 @@ class DTIDataset(Dataset):
 
         return result
 
-    def _transform_shape(self, data):
+# 自定义变换类
+class BoundaryCrop:
+    def __call__(self, data):
         """
-        调整数据的形状为目标形状
+        边界裁剪
         :param data: 输入数据，形状为 (channels, height, width, depth)
-        :return: 调整后的数据，形状为 (channels, target_height, target_width, target_depth)
+        :return: 裁剪后的数据
         """
-        if self.transform == 'boundary':
-            shape = data.shape
-            if shape[0] == 91:
-                data = data[5:-5,5:-5,5:-5]
-            if shape[0] == 182:
-                data = data[16:-16,16:-16,16:-16]
-            return data
-        if self.transform == 'interpolation_91':
-            data = data.unsqueeze(0)  # 添加 batch 维度
-            data = F.interpolate(data, size=(91,91,91), mode='trilinear', align_corners=False)
-            data = data.squeeze(0)  # 去掉 batch 维度
-            return data
-        if self.transform == 'crop_91':
-            _, height, width, depth = data.shape
-            target_height, target_width, target_depth = 91
+        shape = data.shape
+        if shape[1] == 91:
+            data = data[:, 5:-5, 5:-5, 5:-5]
+        elif shape[1] == 182:
+            data = data[:, 16:-16, 16:-16, 16:-16]
+        return data
 
-            # 计算裁剪的起始和结束索引
-            start_height = (height - target_height) // 2
-            start_width = (width - target_width) // 2
-            start_depth = (depth - target_depth) // 2
+class CenterCrop:
+    def __init__(self, target_size):
+        self.target_size = target_size
 
-            end_height = start_height + target_height
-            end_width = start_width + target_width
-            end_depth = start_depth + target_depth
+    def __call__(self, data):
+        """
+        中心裁剪到目标大小
+        :param data: 输入数据，形状为 (batch, channel, height, width, depth)
+        :return: 裁剪后的数据，形状为 (batch, channel, target_size, target_size, target_size)
+        """
+        channel, height, width, depth = data.shape
+        start_height = (height - self.target_size) // 2
+        start_width = (width - self.target_size) // 2
+        start_depth = (depth - self.target_size) // 2
 
-            # 裁剪数据
-            data = data[:, start_height:end_height, start_width:end_width, start_depth:end_depth]
-            return data
+        # 裁剪 height, width, depth 三个维度
+        data = data[
+            :,  # 保留 channel 维度
+            start_height:start_height + self.target_size,  # 裁剪 height
+            start_width:start_width + self.target_size,    # 裁剪 width
+            start_depth:start_depth + self.target_size     # 裁剪 depth
+        ]
+        return data
 
+class IntervalSlice:
+    def __init__(self, target_size):
+        self.target_size = target_size
 
-def create_dataloaders(dataset, subject_id, unique_ids, train_ids, val_ids, bs):
-    """
-    根据给定的训练和验证ID创建训练和验证DataLoader。
+    def __call__(self, data):
+        """
+        间隔切片法降采样
+        :param data: 输入数据，形状为 (batch, channel, height, width, depth)
+        :return: 降采样后的数据，形状为 (batch, channel, target_size, target_size, target_size)
+        """
+        channel, height, width, depth = data.shape
+        step_height = max(1, height // self.target_size)  # 确保步长至少为 1
+        step_width = max(1, width // self.target_size)    # 确保步长至少为 1
+        step_depth = max(1, depth // self.target_size)    # 确保步长至少为 1
 
-    参数:
-    - dataset: 原始数据集
-    - subject_id: 数据集中每个样本对应的参与者ID
-    - unique_ids: 所有唯一的参与者ID
-    - train_ids: 训练集的参与者ID索引
-    - val_ids: 验证集的参与者ID索引
-    - bs: 训练集的批量大小
+        # 间隔切片
+        sliced_data = data[
+            :,  # 保留 channel 维度
+            ::step_height,  # 间隔切片 height
+            ::step_width,   # 间隔切片 width
+            ::step_depth    # 间隔切片 depth
+        ]
 
-    返回:
-    - train_loader: 训练集的DataLoader
-    - val_loader: 验证集的DataLoader
-    """
-    # 获取训练和验证的参与者ID
-    train_participants = unique_ids[train_ids]
-    val_participants = unique_ids[val_ids]
+        # 如果切片后的尺寸大于目标尺寸，则裁剪到目标尺寸
+        if sliced_data.shape[1] > self.target_size:
+            sliced_data = sliced_data[:, :self.target_size, :, :]
+        if sliced_data.shape[2] > self.target_size:
+            sliced_data = sliced_data[:, :, :self.target_size, :]
+        if sliced_data.shape[3] > self.target_size:
+            sliced_data = sliced_data[:, :, :, :self.target_size]
 
-    # 获取训练和验证的样本索引
-    train_indices = np.where(np.isin(subject_id, train_participants))[0]
-    val_indices = np.where(np.isin(subject_id, val_participants))[0]
+        return sliced_data
 
-    # 创建训练和验证子集
-    train_subset = Subset(dataset, train_indices)
-    val_subset = Subset(dataset, val_indices)
-
-    # 获取训练和验证的标签
-    train_labels = [train_subset.dataset[i][1] for i in train_subset.indices]
-    val_labels = [val_subset.dataset[i][1] for i in val_subset.indices]
-
-    # 统计标签分布
-    train_counter = Counter(train_labels)
-    val_counter = Counter(val_labels)
-
-    # 打印标签分布表
-    table = [
-        "+-------------------+-------+-------+",
-        "|                   | Label 0 | Label 1 |",
-        "+-------------------+-------+-------+",
-        f"| Train            |   {train_counter[0]}    |   {train_counter[1]}    |",
-        "+-------------------+-------+-------+",
-        f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
-        "+-------------------+-------+-------+"
-    ]
-    for row in table:
-        logging.info(row)
-
-    # 创建DataLoader
-    train_loader = DataLoader(train_subset, batch_size=bs, shuffle=True)
-    val_loader = DataLoader(val_subset, batch_size=bs, shuffle=False)
-
-    return train_loader, val_loader
 # 当前可以选择的shape是 91, 109, 91
 # 或者是 182， 218， 182
 # 有没有可能就是说使用一个transforme函数来调整dataset中data的shape增强泛化性呢？
+if __name__ == "__main__":
+    input_tensor = torch.randn(1, 3, 192, 218, 192)  # (batch, channels, depth, height, width)
+
+    # 2. 中心裁剪为 (batch, 3, 186, 186, 186)
+    transform_crop = CenterCrop(target_size=186)
+    cropped_tensor = transform_crop(input_tensor)  # (batch, 3, 186, 186, 186)
+    print(cropped_tensor.shape)
+    # 3. 间隔切片法降采样为 (batch, 3, 128, 128, 128)
+    transform_slice = IntervalSlice(target_size=128)
+    sliced_tensor = transform_slice(cropped_tensor)  # (batch, 3, 128, 128, 128)
+    print(sliced_tensor.shape)
