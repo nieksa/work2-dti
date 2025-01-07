@@ -12,8 +12,8 @@ from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
 
-channels = ["FA","L1","L23m","06","07","MD"]
-# channels = ["FA"]
+# channels = ["FA","L1","L23m","06","07","MD"]
+channels = ["FA"]
 transform = None
 # template = ["1mm" "2mm" "s6mm"]
 template = "1mm"

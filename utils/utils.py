@@ -18,7 +18,7 @@ def setup_training_environment():
     parser.add_argument('--model_name', type=str, default='ResNet18', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
-    parser.add_argument('--num_workers', type=int, default=16, help='Number of CPU workers.')
+    parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')
     parser.add_argument('--data_dir', type=str, default='./data/ppmi/')
 
