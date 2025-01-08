@@ -24,7 +24,7 @@ csv_file = 'data/data.csv'
 # ])
 # template = "1mm"
 # dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
-
+args.debug = True
 dataset = NPZdataset(csv_file, args)
 
 seed = 42

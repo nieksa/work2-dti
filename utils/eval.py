@@ -23,16 +23,15 @@ def calculate_metrics(cm):
     FN = cm[1, 0]
     TP = cm[1, 1]
     accuracy = (TP + TN) / np.sum(cm)
-    sensitivity = TP / (TP + FN)
-    specificity = TN / (TN + FP)
+    sensitivity = TP / (TP + FN) if (TP + FN) != 0 else 0
+    specificity = TN / (TN + FP) if (TN + FP) != 0 else 0
     balanced_accuracy = (sensitivity + specificity) / 2
     p_o = (TP + TN) / (TP + FP + FN + TN)
     p_e = ((TP + FP) / (TP + FP + FN + TN)) * ((TP + FN) / (TP + FP + FN + TN)) + ((TN + FN) / (TP + FP + FN + TN)) * ((TN + FP) / (TP + FP + FN + TN))
     kappa = (p_o - p_e) / (1 - p_e)
-    recall = TP / (TP + FN)
+    recall = TP / (TP + FN) if (TP + FN) != 0 else 0
     precision = TP / (TP + FP) if (TP + FP) != 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) != 0 else 0
-    specificity = TN / (TN + FP)
 
     return {
         'accuracy': accuracy,
