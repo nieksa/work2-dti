@@ -2,6 +2,8 @@ data/ppmi/
 data/*.csv
 data/ppmi_npz/
 logs/*/
+logs/analysis_log.py
+logs/draw.py
 saved_models/*
 runs/*
 Miniconda3-latest-Linux-x86_64.sh
