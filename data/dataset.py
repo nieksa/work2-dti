@@ -10,6 +10,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 class DTIDataset(Dataset):
     def __init__(self, csv_file, args, channels, transform=None, template="s6mm"):
@@ -101,31 +102,11 @@ class DTIDataset(Dataset):
 
         return result
 
-# 自定义变换类
-class BoundaryCrop:
-    def __call__(self, data):
-        """
-        边界裁剪
-        :param data: 输入数据，形状为 (channels, height, width, depth)
-        :return: 裁剪后的数据
-        """
-        shape = data.shape
-        if shape[1] == 91:
-            data = data[:, 5:-5, 5:-5, 5:-5]
-        elif shape[1] == 182:
-            data = data[:, 16:-16, 16:-16, 16:-16]
-        return data
-
 class CenterCrop:
     def __init__(self, target_size):
         self.target_size = target_size
 
     def __call__(self, data):
-        """
-        中心裁剪到目标大小
-        :param data: 输入数据，形状为 (batch, channel, height, width, depth)
-        :return: 裁剪后的数据，形状为 (batch, channel, target_size, target_size, target_size)
-        """
         channel, height, width, depth = data.shape
         start_height = (height - self.target_size) // 2
         start_width = (width - self.target_size) // 2
@@ -140,50 +121,44 @@ class CenterCrop:
         ]
         return data
 
-class IntervalSlice:
-    def __init__(self, target_size):
-        self.target_size = target_size
 
-    def __call__(self, data):
-        """
-        间隔切片法降采样
-        :param data: 输入数据，形状为 (batch, channel, height, width, depth)
-        :return: 降采样后的数据，形状为 (batch, channel, target_size, target_size, target_size)
-        """
-        channel, height, width, depth = data.shape
-        step_height = max(1, height // self.target_size)  # 确保步长至少为 1
-        step_width = max(1, width // self.target_size)    # 确保步长至少为 1
-        step_depth = max(1, depth // self.target_size)    # 确保步长至少为 1
+def plot_slices(data, title):
+    """
+    绘制数据的中间切片
+    """
+    # 选择第一个通道（如果数据是 4D 的）
+    if len(data.shape) == 4:
+        data = data[0]  # 选择第一个通道
 
-        # 间隔切片
-        sliced_data = data[
-            :,  # 保留 channel 维度
-            ::step_height,  # 间隔切片 height
-            ::step_width,   # 间隔切片 width
-            ::step_depth    # 间隔切片 depth
-        ]
+    mid_slice_x = data[data.shape[0] // 2, :, :]  # X轴中间切片
+    mid_slice_y = data[:, data.shape[1] // 2, :]  # Y轴中间切片
+    mid_slice_z = data[:, :, data.shape[2] // 2]  # Z轴中间切片
 
-        # 如果切片后的尺寸大于目标尺寸，则裁剪到目标尺寸
-        if sliced_data.shape[1] > self.target_size:
-            sliced_data = sliced_data[:, :self.target_size, :, :]
-        if sliced_data.shape[2] > self.target_size:
-            sliced_data = sliced_data[:, :, :self.target_size, :]
-        if sliced_data.shape[3] > self.target_size:
-            sliced_data = sliced_data[:, :, :, :self.target_size]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-        return sliced_data
+    axes[0].imshow(mid_slice_x, cmap='gray')
+    axes[0].set_title(f'{title} - X Mid slice')
+    axes[0].axis('off')
 
-# 当前可以选择的shape是 91, 109, 91
-# 或者是 182， 218， 182
-# 有没有可能就是说使用一个transforme函数来调整dataset中data的shape增强泛化性呢？
+    axes[1].imshow(mid_slice_y, cmap='gray')
+    axes[1].set_title(f'{title} - Y Mid slice')
+    axes[1].axis('off')
+
+    axes[2].imshow(mid_slice_z, cmap='gray')
+    axes[2].set_title(f'{title} - Z Mid slice')
+    axes[2].axis('off')
+
+    plt.show()
 if __name__ == "__main__":
-    input_tensor = torch.randn(1, 3, 192, 218, 192)  # (batch, channels, depth, height, width)
+    file_path = "./ppmi/0m/DTI_Results_GOOD/003101/standard_space/003101_FA_4normalize_to_target_1mm.nii.gz"
+    nii_img = nib.load(file_path)
+    data = nii_img.get_fdata()
+    data = np.expand_dims(data, axis=0)
+    print(f"Original shape: {data.shape}")
 
-    # 2. 中心裁剪为 (batch, 3, 186, 186, 186)
-    transform_crop = CenterCrop(target_size=186)
-    cropped_tensor = transform_crop(input_tensor)  # (batch, 3, 186, 186, 186)
-    print(cropped_tensor.shape)
-    # 3. 间隔切片法降采样为 (batch, 3, 128, 128, 128)
-    transform_slice = IntervalSlice(target_size=128)
-    sliced_tensor = transform_slice(cropped_tensor)  # (batch, 3, 128, 128, 128)
-    print(sliced_tensor.shape)
+    # 2. 中心裁剪为 90 or 180
+    transform_crop = CenterCrop(target_size=180)
+    cropped_data = transform_crop(data)  # (batch, 3, 186, 186, 186)
+
+    print(f"Transform shape:{cropped_data.shape}")
+    plot_slices(cropped_data, "FA")

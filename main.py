@@ -20,6 +20,7 @@ args, device, log_file, timestamp = setup_training_environment()
 channels = ["FA","L1","MD"]
 transform = transforms.Compose([
     CenterCrop(target_size=180),
+    CenterCrop(target_size=186),
 ])
 template = "1mm"
 csv_file = './data/ppmi/data.csv'
