@@ -2,7 +2,7 @@ import pandas as pd
 
 # 假设CSV文件名为 'data.csv'
 # 读取CSV文件
-df = pd.read_csv('data.csv', header=None)
+df = pd.read_csv('../data.csv', header=None)
 
 # 统计第三列中3和4的数量
 count_3 = (df[2] == 3).sum()
@@ -16,7 +16,7 @@ print(f"4的数量: {count_4}")
 
 
 
-df = pd.read_csv('data.csv', header=None, dtype={0: str})
+df = pd.read_csv('../data.csv', header=None, dtype={0: str})
 # 筛选出值为1、2、4的行
 filtered_df = df[df[2].isin([1, 2, 4])]
 

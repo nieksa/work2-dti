@@ -1,4 +1,5 @@
-data/ppmi/*/
+data/ppmi/
+data/ppmi_npz/
 logs/*/
 saved_models/*
 runs/*

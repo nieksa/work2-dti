@@ -1,1 +1,2 @@
-from .dataset import *
+from .DTIdataset import *
+from .NPZdataset import *

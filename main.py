@@ -1,5 +1,5 @@
 import torch
-from data import DTIDataset, CenterCrop
+from data import DTIDataset, CenterCrop, NPZdataset
 from collections import Counter
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
@@ -23,9 +23,9 @@ transform = transforms.Compose([
     CenterCrop(target_size=186),
 ])
 template = "1mm"
-csv_file = './data/ppmi/data.csv'
-dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
-
+csv_file = 'data/data.csv'
+# dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
+dataset = NPZdataset(csv_file, args)
 
 seed = 42
 set_seed(seed)

@@ -11,9 +11,8 @@ import torch
 import torch.nn.functional as F
 from torchvision import transforms
 import matplotlib.pyplot as plt
-
 class DTIDataset(Dataset):
-    def __init__(self, csv_file, args, channels, transform=None, template="s6mm"):
+    def __init__(self, csv_file, args, channels, transform=None, template="1mm"):
         """
         初始化数据集
         :param csv_file: CSV 文件路径，包含样本路径、参与者ID和标签
@@ -24,7 +23,7 @@ class DTIDataset(Dataset):
         """
         self.data_info = pd.read_csv(csv_file, dtype={0: str})
         self.task = args.task
-        self.root_dir = args.data_dir
+        self.root_dir = "./data/ppmi/"
         self.channels = channels
         self.transform = transform
         self.template = template
