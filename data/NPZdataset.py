@@ -126,7 +126,7 @@ class NPZdataset(CacheDataset):
 
 
 if __name__ == "__main__":
-    file_path = "E:\\ppmi\\0m\\DTI_Results_GOOD\\003804\standard_space\\003804_FA_L1_MD_1mm.npz"
+    file_path = ".\\ppmi_npz\\0m\\DTI_Results_GOOD\\003804\standard_space\\003804_FA_L1_MD_1mm.npz"
     nii_img = np.load(file_path)
     data = nii_img['data']
     data = np.expand_dims(data, axis=0)

@@ -1,4 +1,5 @@
 data/ppmi/
+data/*.csv
 data/ppmi_npz/
 logs/*/
 saved_models/*
