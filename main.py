@@ -1,5 +1,5 @@
 import torch
-from data import DTIDataset, CenterCrop, IntervalSlice
+from data import DTIDataset, CenterCrop
 from collections import Counter
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
@@ -19,8 +19,7 @@ args, device, log_file, timestamp = setup_training_environment()
 
 channels = ["FA","L1","MD"]
 transform = transforms.Compose([
-    CenterCrop(target_size=186),
-    IntervalSlice(target_size=128)
+    CenterCrop(target_size=180),
 ])
 template = "1mm"
 csv_file = './data/ppmi/data.csv'
@@ -61,26 +60,25 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     train_subset = Subset(dataset, train_indices)
     val_subset = Subset(dataset, val_indices)
 
-    if fold == 0:
-        train_labels = dataset.labels[train_indices]
-        val_labels = dataset.labels[val_indices]
+    train_labels = dataset.labels[train_indices]
+    val_labels = dataset.labels[val_indices]
 
-        # 统计标签分布
-        train_counter = Counter(train_labels)
-        val_counter = Counter(val_labels)
+    # 统计标签分布
+    train_counter = Counter(train_labels)
+    val_counter = Counter(val_labels)
 
-        # 打印标签分布表
-        table = [
-            "+-------------------+-------+-------+",
-            "|                   | Label 0 | Label 1 |",
-            "+-------------------+-------+-------+",
-            f"| Train            |   {train_counter[0]}    |   {train_counter[1]}    |",
-            "+-------------------+-------+-------+",
-            f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
-            "+-------------------+-------+-------+"
-        ]
-        for row in table:
-            logging.info(row)
+    # 打印标签分布表
+    table = [
+        "+-------------------+-------+-------+",
+        "|                   | Label 0 | Label 1 |",
+        "+-------------------+-------+-------+",
+        f"| Train            |   {train_counter[0]}    |   {train_counter[1]}    |",
+        "+-------------------+-------+-------+",
+        f"| Validation       |   {val_counter[0]}    |   {val_counter[1]}    |",
+        "+-------------------+-------+-------+"
+    ]
+    for row in table:
+        logging.info(row)
 
     # 创建DataLoader
     train_loader = DataLoader(train_subset, batch_size=args.bs, shuffle=True)
@@ -106,7 +104,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     }
     max_epochs = args.epochs
 
-    val_start = 1
+    val_start = 20
     val_interval = 1
 
     early_stop_start = 20
@@ -127,12 +125,25 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         eval_metrics, cm, all_labels, all_preds, all_probs = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch+1)
         if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
             current_val_metric = eval_metrics['accuracy']
+            if result_cm == None:
+                result_metric = eval_metrics
+                result_cm = cm
+                result_labels = all_labels
+                result_preds = all_preds
+                result_probs = all_probs
             if (epoch+1) > early_stop_start and current_val_metric > (best_val_metric + min_delta):
                 best_val_metric = current_val_metric
                 epochs_without_improvement = 0
                 best_model_weights = model.state_dict().copy()
-                save_best_model(best_model_weights, eval_metrics, best_metric, best_metric_model, args, timestamp,
-                                fold=fold, epoch=epoch+1, metric_name='accuracy')
+                save_best_model(best_model_weights,
+                                eval_metrics,
+                                best_metric,
+                                best_metric_model,
+                                args,
+                                timestamp,
+                                fold=fold,
+                                epoch=epoch+1,
+                                metric_name='accuracy')
                 result_metric = eval_metrics
                 result_cm = cm
                 result_labels = all_labels
