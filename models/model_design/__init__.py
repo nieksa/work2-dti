@@ -1,1 +1,2 @@
 from .dti_design1 import generate_model as resnet_with_mil
+from .regionTransformer3d import ROIVisionTransformer

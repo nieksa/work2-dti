@@ -126,7 +126,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
         eval_metrics, cm, all_labels, all_preds, all_probs = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch+1)
         if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
             current_val_metric = eval_metrics['accuracy']
-            if result_cm == None:
+            if result_cm is None:
                 result_metric = eval_metrics
                 result_cm = cm
                 result_labels = all_labels
