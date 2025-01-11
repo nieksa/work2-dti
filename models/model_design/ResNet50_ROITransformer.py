@@ -209,17 +209,16 @@ class ResNet(nn.Module):
 
     def forward(self, x):
 
-        #  1 128 128 128
-        x = self.conv1(x)  # 64 64 64 64
+        x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         if not self.no_max_pool:
-            x = self.maxpool(x)  # 64 32 32 32
+            x = self.maxpool(x)
 
-        x = self.layer1(x)  # 64 32 32 32
-        x = self.layer2(x)  # 128 16 16 16
-        x = self.layer3(x)  # 256 8 8 8
-        x = self.layer4(x) #512 4 4 4
+        x = self.layer1(x)  # 256 45 45 45
+        x = self.layer2(x)  # 512 23 23 23
+        x = self.layer3(x)  # 1024 12 12 12
+        x = self.layer4(x)  # 2048 6 6 6
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
@@ -257,7 +256,7 @@ if __name__ == "__main__":
     x = x.to(device)
     print("x size: {}".format(x.size()))
 
-    model = generate_model(50, n_input_channels=3,n_classes=2).to(device)
+    model = generate_model(18, n_input_channels=3,n_classes=2).to(device)
     print(model)
     out1 = model(x)
     print("out size: {}".format(out1.size()))

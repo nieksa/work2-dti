@@ -6,28 +6,25 @@ import torch.nn as nn
 
 
 class ROIEmbed(nn.Module):
-    def __init__(self, roi_dim=2048):
+    def __init__(self, roi_dim=128):
         super(ROIEmbed, self).__init__()
         self.roi_dim = roi_dim
 
         self.conv_layers = nn.Sequential(
-            nn.Conv3d(in_channels=3, out_channels=64, kernel_size=3, stride=3, padding=0),
+            nn.Conv3d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=0),
             nn.BatchNorm3d(64),
             nn.ReLU(),
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=3, stride=3, padding=0),
+            nn.Conv3d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=0),
             nn.BatchNorm3d(128),
-            nn.ReLU(),
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm3d(256),
             nn.ReLU(),
             nn.Dropout3d(0.2),
             nn.AdaptiveAvgPool3d(output_size=(9, 9, 9))
         )
         self.fc1 = nn.Sequential(
-            nn.Linear(in_features=256, out_features=1024),  # 输入维度为 256
+            nn.Linear(in_features=64, out_features=128),  # 输入维度为 256
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(in_features=1024, out_features=self.roi_dim),
+            nn.Dropout(0.2),
+            nn.Linear(in_features=128, out_features=self.roi_dim),
         )
 
     def forward(self, x):
@@ -189,8 +186,8 @@ class ROIVisionTransformer(nn.Module):
         return logits
 
 if __name__ == '__main__':
-    # model = ROIVisionTransformer(roi_feature_dim=512, voxel_feature_dim=13, num_layers=1, num_heads=1)
-    model = ROIEmbed(roi_dim=1024)
+    model = ROIVisionTransformer(roi_feature_dim=128, voxel_feature_dim=128, num_layers=1, num_heads=1)
+    # model = ROIEmbed(roi_dim=128)
     x = torch.randn((1, 3, 180, 180, 180))
     logits = model(x)
     print(logits.shape)
