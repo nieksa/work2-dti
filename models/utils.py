@@ -3,7 +3,7 @@ from models.compare.slowfast import SlowFast
 from models.compare.C3D import C3D
 from models.compare.densnet import DenseNet
 from models.compare.resnet import generate_model as generate_resnet
-from models.model_design import resnet_with_mil, ROIVisionTransformer
+from models.model_design import resnet_with_mil, ROIVisionTransformer, dual_resnet_transformer
 def create_model(model_name):
     if model_name == 'ResNet18':
         model = generate_resnet(18, n_input_channels=3, n_classes=2)
@@ -27,6 +27,8 @@ def create_model(model_name):
         model = resnet_with_mil(18, n_input_channels=3, n_classes=2)
     elif model_name == "DTI_design2":
         model = ROIVisionTransformer(roi_feature_dim=1024, voxel_feature_dim=256, num_heads=1, num_layers=1)
+    elif model_name == "Dual_1":
+        model = dual_resnet_transformer(18, n_input_channels=3,n_classes=2)
     else:
         raise ValueError(f'Unsupported model: {model_name}')
     return model
