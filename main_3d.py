@@ -132,26 +132,27 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
                 result_labels = all_labels
                 result_preds = all_preds
                 result_probs = all_probs
-            if (epoch+1) > early_stop_start and current_val_metric > (best_val_metric + min_delta):
-                best_val_metric = current_val_metric
-                epochs_without_improvement = 0
-                best_model_weights = model.state_dict().copy()
-                save_best_model(best_model_weights,
-                                eval_metrics,
-                                best_metric,
-                                best_metric_model,
-                                args,
-                                timestamp,
-                                fold=fold,
-                                epoch=epoch+1,
-                                metric_name='accuracy')
-                result_metric = eval_metrics
-                result_cm = cm
-                result_labels = all_labels
-                result_preds = all_preds
-                result_probs = all_probs
-            else:
-                epochs_without_improvement += 1
+            if (epoch+1) > early_stop_start:
+                if current_val_metric > (best_val_metric + min_delta):
+                    best_val_metric = current_val_metric
+                    epochs_without_improvement = 0
+                    best_model_weights = model.state_dict().copy()
+                    save_best_model(best_model_weights,
+                                    eval_metrics,
+                                    best_metric,
+                                    best_metric_model,
+                                    args,
+                                    timestamp,
+                                    fold=fold,
+                                    epoch=epoch+1,
+                                    metric_name='accuracy')
+                    result_metric = eval_metrics
+                    result_cm = cm
+                    result_labels = all_labels
+                    result_preds = all_preds
+                    result_probs = all_probs
+                else:
+                    epochs_without_improvement += 1
 
         if epochs_without_improvement >= patience:
             logging.info(f"Early Stopping at Epoch {epoch + 1}. Val Metric did not improve for {patience} epochs.")
