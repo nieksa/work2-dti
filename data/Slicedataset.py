@@ -1,12 +1,10 @@
 import pandas as pd
 import numpy as np
 import os
-import glob
-import psutil
 from torch.utils.data import Dataset
+import torch
 
-
-class Slicedataset(Dataset):
+class SliceDataset(Dataset):
     def __init__(self, csv_file, args, transform=None):
         """
         初始化数据集
@@ -69,14 +67,20 @@ class Slicedataset(Dataset):
         x_slice = data[:, depth // 2, :, :]  # 取深度方向的中间切片
         y_slice = data[:, :, height // 2, :]  # 取高度方向的中间切片
         z_slice = data[:, :, :, width // 2]  # 取宽度方向的中间切片
-        data = (x_slice, y_slice, z_slice)
+
+        x_slice = x_slice.unsqueeze(-1)  # 形状变为 [C, H, W, 1]
+        y_slice = y_slice.unsqueeze(-1)  # 形状变为 [C, H, W, 1]
+        z_slice = z_slice.unsqueeze(-1)  # 形状变为 [C, H, W, 1]
+
+        # 在最后一个维度上拼接三个切片
+        combined_data = torch.cat([x_slice, y_slice, z_slice], dim=-1)  # 形状变为 [C, H, W, 3]
 
         label = self.labels[idx]
 
         if self.transform:
-            data = self.transform(data)  # 应用数据变换
+            combined_data = self.transform(combined_data)  # 应用数据变换
 
-        return data, label
+        return combined_data, label
 
     def _load_npz(self, idx):
         """
@@ -107,19 +111,3 @@ class Slicedataset(Dataset):
             raise KeyError(f"Key 'data' not found in .npz file: {file_path}")
 
         return npz_data["data"]
-
-
-if __name__ == "__main__":
-    class Args:
-        def __init__(self):
-            self.task = "NCvsPD"
-            self.debug = True
-            self.num_workers = 4
-
-    args = Args()
-    dataset = Slicedataset(csv_file="path/to/csv_file.csv", args=args)
-
-    # 测试数据加载
-    for i in range(len(dataset)):
-        data, label = dataset[i]
-        print(f"Sample {i}: data shape={[d.shape for d in data]}, label={label}")

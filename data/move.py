@@ -43,9 +43,9 @@ def process_subject(subject_id, timepoint, input_root, output_root, target_size)
     )
 
     # 查找 FA、L1、MD 文件
-    fa_file = os.path.join(input_path, f"{subject_id}_FA_*_1mm.nii.gz")
-    l1_file = os.path.join(input_path, f"{subject_id}_L1_*_1mm.nii.gz")
-    md_file = os.path.join(input_path, f"{subject_id}_MD_*_1mm.nii.gz")
+    fa_file = os.path.join(input_path, f"{subject_id}_FA_*_2mm.nii.gz")
+    l1_file = os.path.join(input_path, f"{subject_id}_L1_*_2mm.nii.gz")
+    md_file = os.path.join(input_path, f"{subject_id}_MD_*_2mm.nii.gz")
 
     # 使用 glob 查找匹配的文件
     fa_files = glob.glob(fa_file)
@@ -83,12 +83,12 @@ def process_subject(subject_id, timepoint, input_root, output_root, target_size)
     os.makedirs(output_path, exist_ok=True)
 
     # 保存为 npz 文件
-    output_file = os.path.join(output_path, f"{subject_id}_FA_L1_MD_1mm.npz")
+    output_file = os.path.join(output_path, f"{subject_id}_FA_L1_MD_2mm.npz")
     np.savez_compressed(output_file, data=merged_data)
     print(f"保存合并后的数据到: {output_file}")
 
 
-def process_and_save_nii_files(input_root, output_root, timepoints, target_size=(180, 180, 180)):
+def process_and_save_nii_files(input_root, output_root, timepoints, target_size=(90, 90, 90)):
     """
     根据指定路径找到 3 个 nii.gz 文件，执行中心裁剪和合并操作，保存为 npz 文件。
     :param input_root: 输入根目录（例如 ./ppmi）
@@ -118,6 +118,6 @@ def process_and_save_nii_files(input_root, output_root, timepoints, target_size=
 
 # 示例调用
 input_root = "./ppmi"
-output_root = "E:/ppmi"
+output_root = "E://ppmi_npz2"
 timepoints = ["0m", "12m", "24m"]  # 时间点
 process_and_save_nii_files(input_root, output_root, timepoints)

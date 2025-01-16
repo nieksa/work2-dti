@@ -1,0 +1,1 @@
+from .vit_3d_resnet_fusion import generate_model as vit_3d_resnet_fusion

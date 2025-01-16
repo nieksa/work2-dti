@@ -66,7 +66,7 @@ class TripletAttention(nn.Module):
 
 # 示例代码
 if __name__ == '__main__':
-    input = torch.randn(10, 32, 64, 64, 64)  # 生成随机输入
+    input = torch.randn(1, 64, 23, 23, 23)  # 生成随机输入
     triplet = TripletAttention()  # 实例化TripletAttention
     output = triplet(input)  # 应用TripletAttention
     print(output.shape)  # 打印输出形状

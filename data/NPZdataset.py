@@ -47,7 +47,7 @@ class NPZdataset(CacheDataset):
         available_memory = memory_info.available  # 可用内存（字节）
 
         # 估算数据集大小（假设每个样本 100MB）
-        sample_size = 100 * 1024 * 1024  # 100MB
+        sample_size = 10 * 1024 * 1024  # 100MB
         total_data_size = len(self.subject_id) * sample_size
 
         # 计算缓存比例
@@ -101,7 +101,7 @@ class NPZdataset(CacheDataset):
         :return: 数据数组（形状为 (channels, depth, height, width)）
         """
         # 构建文件路径模式
-        file_pattern = f"{self.subject_id[idx]}_FA_L1_MD_1mm.npz"
+        file_pattern = f"{self.subject_id[idx]}_FA_L1_MD_2mm.npz"
         file_path = os.path.join(
             self.root_dir,
             self.event_id[idx],
@@ -126,7 +126,7 @@ class NPZdataset(CacheDataset):
 
 
 if __name__ == "__main__":
-    file_path = ".\\ppmi_npz\\0m\\DTI_Results_GOOD\\003804\standard_space\\003804_FA_L1_MD_1mm.npz"
+    file_path = ".\\ppmi_npz\\0m\\DTI_Results_GOOD\\003804\standard_space\\003804_FA_L1_MD_2mm.npz"
     nii_img = np.load(file_path)
     data = nii_img['data']
     data = np.expand_dims(data, axis=0)

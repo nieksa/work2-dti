@@ -1,5 +1,5 @@
 import torch
-from data import SliceDataset
+from data import ROIDataset
 from collections import Counter
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
@@ -12,11 +12,13 @@ from statistics import mean, stdev
 from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
+from torchvision import transforms
 from collections import defaultdict
 args, device, log_file, timestamp = setup_training_environment()
 csv_file = 'data/data.csv'
 
-dataset = SliceDataset(csv_file, args)
+channels = ["06LDHs","07LDHk","FA","L1","L23m","MD"]
+dataset = ROIDataset(csv_file, args, channels)
 
 seed = 42
 set_seed(seed)
@@ -99,7 +101,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     val_start = 20
     val_interval = 1
 
-    early_stop_start = 50
+    early_stop_start = 20
     patience = 5
     min_delta = 0.001
     best_val_metric = 0

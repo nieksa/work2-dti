@@ -4,12 +4,7 @@ from torch.utils.data import Dataset
 import os
 import glob
 import numpy as np
-from torch.utils.data import Subset, DataLoader
-from collections import Counter
-import logging
 import torch
-import torch.nn.functional as F
-from torchvision import transforms
 import matplotlib.pyplot as plt
 class DTIDataset(Dataset):
     def __init__(self, csv_file, args, channels, transform=None, template="1mm"):
@@ -148,16 +143,3 @@ def plot_slices(data, title):
     axes[2].axis('off')
 
     plt.show()
-if __name__ == "__main__":
-    file_path = "./ppmi/0m/DTI_Results_GOOD/003101/standard_space/003101_FA_4normalize_to_target_1mm.nii.gz"
-    nii_img = nib.load(file_path)
-    data = nii_img.get_fdata()
-    data = np.expand_dims(data, axis=0)
-    print(f"Original shape: {data.shape}")
-
-    # 2. 中心裁剪为 90 or 180
-    transform_crop = CenterCrop(target_size=180)
-    cropped_data = transform_crop(data)  # (batch, 3, 186, 186, 186)
-
-    print(f"Transform shape:{cropped_data.shape}")
-    plot_slices(cropped_data, "FA")

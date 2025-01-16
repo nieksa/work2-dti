@@ -26,7 +26,7 @@ class Simam3DModule(nn.Module):
         return x * self.act(y)
 
 if __name__ == "__main__":
-    input_tensor = torch.randn(4, 16, 64, 64, 64) 
+    input_tensor = torch.randn(1, 64, 23, 23, 23)
     simam3d = Simam3DModule(e_lambda=1e-4)
     output_tensor = simam3d(input_tensor)
     print(output_tensor.shape)

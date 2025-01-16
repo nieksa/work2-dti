@@ -1,5 +1,5 @@
 import torch
-from data import DTIDataset, CenterCrop, NPZdataset
+from data import NPZdataset
 from collections import Counter
 from torch.utils.data import DataLoader, Subset
 from torch.nn import DataParallel
@@ -24,7 +24,7 @@ csv_file = 'data/data.csv'
 # ])
 # template = "1mm"
 # dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
-args.debug = True
+
 dataset = NPZdataset(csv_file, args)
 
 seed = 42
@@ -105,7 +105,7 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     }
     max_epochs = args.epochs
 
-    val_start = 20
+    val_start = 0
     val_interval = 1
 
     early_stop_start = 20
