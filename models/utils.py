@@ -1,6 +1,6 @@
 import torch
 from models.compare.resnet import generate_model as generate_resnet
-from models.model_design_for_3d import vit_3d_resnet_fusion
+from models.model_design_for_3d import vit_3d_resnet_fusion, vit_3d_resnet_fusion_contrastive_learning
 from models.model_design_for_roi import *
 from models.model_design_for_slice import *
 def create_model(model_name):
@@ -9,6 +9,13 @@ def create_model(model_name):
         model = generate_resnet(18, n_input_channels=3, n_classes=2)
     elif model_name == '3D_ViT_ResNet18':
         model = vit_3d_resnet_fusion(18, n_input_channels=3, n_classes=2)
+    # 对比学习模型单通道融合机制
+    elif model_name == '3D_ViT_ResNet18_Contrastive_Learning':
+        model = vit_3d_resnet_fusion_contrastive_learning(18, n_input_channels=1, n_classes=2)
+
+
+
+
 
     # ROI 模型
     elif model_name == "ROI_transformer":
@@ -24,7 +31,8 @@ def create_model(model_name):
 
 
 if __name__ == '__main__':
-    model = create_model('3D_ViT_ResNet18')
-    x = torch.rand(1, 3, 90, 90, 90)
-    out = model(x)
+    model = create_model('3D_ViT_ResNet18_Contrastive_Learning')
+    x = torch.rand(3, 1, 90, 90, 90)
+    out,proj = model(x)
     print(out)
+    print(proj.shape)

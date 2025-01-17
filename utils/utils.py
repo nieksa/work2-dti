@@ -15,7 +15,7 @@ def setup_training_environment():
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
-    parser.add_argument('--model_name', type=str, default='ResNet18', help='Name of the model to use.')
+    parser.add_argument('--model_name', type=str, default='3D_ResNet18', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
     parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
