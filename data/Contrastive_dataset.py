@@ -4,20 +4,15 @@ import pandas as pd
 import os
 import numpy as np
 import psutil
-class Contrastive_dataset(CacheDataset):
+class ContrastiveDataset(CacheDataset):
     def __init__(self, csv_file, args, transform=None):
-        """
-        初始化数据集
-        :param csv_file: CSV 文件路径，包含样本路径、参与者ID和标签
-        :param args: 参数对象，包含任务类型和数据目录等信息
-        :param transform: 数据变换函数或变换列表
-        """
-        self.data_info = pd.read_csv(csv_file, dtype={0: str})
         self.task = args.task
-        self.root_dir = "../data/ppmi_npz/"
+        self.args = args
+        self.root_dir = "./data/ppmi_npz/"
         self.transform = transform
         # 根据 task 筛选样本
-        self.subject_id, self.event_id, self.labels = self._filter_samples()
+        raw_data = pd.read_csv(csv_file, dtype={"PATNO": str, "EVENT_ID": str})
+        self.subject_id, self.event_id, self.labels = self._filter_samples(raw_data)
 
         self.debug = args.debug
         self.debug_size = 20
@@ -51,28 +46,26 @@ class Contrastive_dataset(CacheDataset):
         cache_rate = min(1.0, available_memory / total_data_size)
         return cache_rate
 
-    def _filter_samples(self):
-        """
-        根据 task 筛选样本，并转换标签为 0 和 1
-        :return: 筛选后的 subject_id, event_id, labels
-        """
-        if self.task == 'NCvsPD':
-            mask = self.data_info.iloc[:, 2].isin([1, 2])
-            labels = self.data_info.iloc[:, 2].replace({1: 1, 2: 0})
-        elif self.task == 'NCvsProdromal':
-            mask = self.data_info.iloc[:, 2].isin([2, 4])
-            labels = self.data_info.iloc[:, 2].replace({2: 0, 4: 1})
-        elif self.task == 'ProdromalvsPD':
-            mask = self.data_info.iloc[:, 2].isin([1, 4])
-            labels = self.data_info.iloc[:, 2].replace({4: 0, 1: 1})
-        else:
-            raise ValueError(f"Unknown task: {self.task}")
+    def _filter_samples(self, df):
+        """根据任务类型筛选样本并转换标签"""
+        task_config = {
+            'NCvsPD': {'include': [1, 2], 'mapping': {1: 1, 2: 0}},
+            'NCvsProdromal': {'include': [2, 4], 'mapping': {2: 0, 4: 1}},
+            'ProdromalvsPD': {'include': [1, 4], 'mapping': {4: 0, 1: 1}}
+        }
 
-        subject_id = self.data_info.iloc[:, 0].values[mask]
-        event_id = self.data_info.iloc[:, 1].values[mask]
-        labels = labels.values[mask]
+        if self.args.task not in task_config:
+            raise ValueError(f"无效任务类型: {self.args.task}。可选: {list(task_config.keys())}")
 
-        return subject_id, event_id, labels
+        cfg = task_config[self.args.task]
+        mask = df['APPRDX'].isin(cfg['include'])
+        labels = df['APPRDX'].replace(cfg['mapping'])
+
+        return (
+            df['PATNO'].values[mask],
+            df['EVENT_ID'].values[mask],
+            labels.values[mask].astype(np.int64)
+        )
 
     def __len__(self):
         return len(self.subject_id)
