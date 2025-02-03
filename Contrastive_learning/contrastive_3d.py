@@ -16,7 +16,8 @@ from collections import defaultdict
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix, roc_auc_score
 from utils.eval import calculate_metrics
-from contrastive_loss import nt_xent_loss
+
+from Contrastive_learning import nt_xent_loss
 
 args, device, log_file, timestamp = setup_training_environment()
 

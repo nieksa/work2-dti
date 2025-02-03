@@ -15,7 +15,7 @@ from utils.utils import set_seed
 from torchvision import transforms
 from collections import defaultdict
 args, device, log_file, timestamp = setup_training_environment()
-csv_file = 'data/data.csv'
+csv_file = './data/data.csv'
 
 channels = ["06LDHs","07LDHk","FA","L1","L23m","MD"]
 dataset = ROIDataset(csv_file, args, channels)

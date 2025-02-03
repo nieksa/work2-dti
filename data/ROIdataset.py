@@ -7,42 +7,44 @@ import numpy as np
 class ROIDataset(Dataset):
     def __init__(self, csv_file, args, channels, transform=None):
         self.data_info = pd.read_csv(csv_file, dtype={0: str})
+        raw_data = pd.read_csv(csv_file, dtype={"PATNO": str, "EVENT_ID": str})
+        self.args = args
         self.task = args.task
-        self.root_dir = "./data/ppmi/"
+        self.root_dir = "./data/ppmi_npz/"
         self.channels = channels
         self.transform = transform
-        # 根据 task 筛选样本
-        self.subject_id, self.event_id, self.labels = self._filter_samples()
+        self.subject_id, self.event_id, self.labels = self._filter_samples(raw_data)
 
-        self.debug = args.debug
-        self.debug_size = 20
-        if self.debug:
-            self.subject_id = self.subject_id[:self.debug_size]
-            self.event_id = self.event_id[:self.debug_size]
-            self.labels = self.labels[:self.debug_size]
+        if self.args.debug:
+            self._enable_debug_mode()
+    def _enable_debug_mode(self):
+        """调试模式优化"""
+        print(f"【调试模式】原始数据量: {len(self.subject_id)}")
+        self.subject_id = self.subject_id[:self.args.debug_size]
+        self.event_id = self.event_id[:self.args.debug_size]
+        self.labels = self.labels[:self.args.debug_size]
+        print(f"【调试模式】当前数据量: {len(self.subject_id)}")
 
-    def _filter_samples(self):
-        """
-        根据 task 筛选样本，并转换标签为 0 和 1
-        :return: 筛选后的 subject_id, event_id, labels
-        """
-        if self.task == 'NCvsPD':
-            mask = self.data_info.iloc[:, 2].isin([1, 2])
-            labels = self.data_info.iloc[:, 2].replace({1: 1, 2: 0})
-        elif self.task == 'NCvsProdromal':
-            mask = self.data_info.iloc[:, 2].isin([2, 4])
-            labels = self.data_info.iloc[:, 2].replace({2: 0, 4: 1})
-        elif self.task == 'ProdromalvsPD':
-            mask = self.data_info.iloc[:, 2].isin([1, 4])
-            labels = self.data_info.iloc[:, 2].replace({4: 0, 1: 1})
-        else:
-            raise ValueError(f"Unknown task: {self.task}")
+    def _filter_samples(self, df):
+        """根据任务类型筛选样本并转换标签"""
+        task_config = {
+            'NCvsPD': {'include': [1, 2], 'mapping': {1: 1, 2: 0}},
+            'NCvsProdromal': {'include': [2, 4], 'mapping': {2: 0, 4: 1}},
+            'ProdromalvsPD': {'include': [1, 4], 'mapping': {4: 0, 1: 1}}
+        }
 
-        subject_id = self.data_info.iloc[:, 0].values[mask]
-        event_id = self.data_info.iloc[:, 1].values[mask]
-        labels = labels.values[mask]
+        if self.args.task not in task_config:
+            raise ValueError(f"无效任务类型: {self.args.task}。可选: {list(task_config.keys())}")
 
-        return subject_id, event_id, labels
+        cfg = task_config[self.args.task]
+        mask = df['APPRDX'].isin(cfg['include'])
+        labels = df['APPRDX'].replace(cfg['mapping'])
+
+        return (
+            df['PATNO'].values[mask],
+            df['EVENT_ID'].values[mask],
+            labels.values[mask].astype(np.int64)
+        )
 
     def __len__(self):
         return len(self.subject_id)

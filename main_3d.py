@@ -12,19 +12,9 @@ from statistics import mean, stdev
 from utils.eval import eval_model, save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
-from torchvision import transforms
 from collections import defaultdict
 args, device, log_file, timestamp = setup_training_environment()
-csv_file = 'data/data.csv'
-
-# channels = ["FA","L1","MD"]
-# transform = transforms.Compose([
-#     CenterCrop(target_size=180),
-#     CenterCrop(target_size=186),
-# ])
-# template = "1mm"
-# dataset = DTIDataset(csv_file, args, channels=channels, transform=transform, template=template)
-
+csv_file = './data/data.csv'
 dataset = NPZdataset(csv_file, args)
 
 seed = 42

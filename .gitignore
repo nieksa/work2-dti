@@ -1,6 +1,8 @@
 data/ppmi/
 data/*.csv
 data/ppmi_npz/
+data/csv查询表/
+data/统计.ipynb
 logs/*/
 logs/analysis_log.py
 logs/draw.py

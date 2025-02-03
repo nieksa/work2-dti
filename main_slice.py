@@ -14,7 +14,7 @@ from sklearn.model_selection import KFold
 from utils.utils import set_seed
 from collections import defaultdict
 args, device, log_file, timestamp = setup_training_environment()
-csv_file = 'data/data.csv'
+csv_file = './data/data.csv'
 
 dataset = SliceDataset(csv_file, args)
 
