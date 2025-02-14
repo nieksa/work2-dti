@@ -7,6 +7,51 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 
+class CoTAttention3D(nn.Module):
+    # 初始化CoT注意力模块（针对3D输入）
+    def __init__(self, dim=512, kernel_size=3):
+        super().__init__()
+        self.dim = dim  # 输入的通道数
+        self.kernel_size = kernel_size  # 卷积核大小
+
+        # 定义用于键(key)的卷积层，包括一个分组卷积，BatchNorm和ReLU激活
+        self.key_embed = nn.Sequential(
+            nn.Conv3d(dim, dim, kernel_size=kernel_size, padding=kernel_size // 2, groups=4, bias=False),
+            nn.BatchNorm3d(dim),
+            nn.ReLU()
+        )
+
+        # 定义用于值(value)的卷积层，包括一个1x1x1卷积和BatchNorm
+        self.value_embed = nn.Sequential(
+            nn.Conv3d(dim, dim, 1, bias=False),
+            nn.BatchNorm3d(dim)
+        )
+
+        # 缩小因子，用于降低注意力嵌入的维度
+        factor = 4
+        # 定义注意力嵌入层，由两个卷积层、一个BatchNorm层和ReLU激活组成
+        self.attention_embed = nn.Sequential(
+            nn.Conv3d(2 * dim, 2 * dim // factor, 1, bias=False),
+            nn.BatchNorm3d(2 * dim // factor),
+            nn.ReLU(),
+            nn.Conv3d(2 * dim // factor, kernel_size * kernel_size * dim, 1)
+        )
+
+    def forward(self, x):
+        # 前向传播函数
+        bs, c, d, h, w = x.shape  # 输入特征的尺寸 (batch_size, channels, depth, height, width)
+
+        k1 = self.key_embed(x)  # 生成键的静态表示
+        v = self.value_embed(x).view(bs, c, -1)  # 生成值的表示并调整形状
+
+        y = torch.cat([k1, x], dim=1)  # 将键的静态表示和原始输入连接
+        att = self.attention_embed(y)  # 生成动态注意力权重
+        att = att.reshape(bs, c, self.kernel_size * self.kernel_size, d, h, w)
+        att = att.mean(2, keepdim=False).view(bs, c, -1)  # 计算注意力权重的均值并调整形状
+        k2 = F.softmax(att, dim=-1) * v  # 应用注意力权重到值上
+        k2 = k2.view(bs, c, d, h, w)  # 调整形状以匹配输出
+
+        return k1 + k2  # 返回键的静态和动态表示的总和
 
 class BasicConv(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1, groups=1, relu=True,
@@ -630,6 +675,10 @@ class ResNet(nn.Module):
         self.tripletatt3 = TripletAttention()
         self.tripletatt4 = TripletAttention()
 
+        self.cot1 = CoTAttention3D(64)
+        self.cot2 = CoTAttention3D(128)
+        self.cot3 = CoTAttention3D(256)
+        self.cot4 = CoTAttention3D(512)
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -677,9 +726,13 @@ class ResNet(nn.Module):
 
     def get_resnet_features(self, x):
         x1 = self.layer1(x)
+        x1 = self.cot1(x1)
         x2 = self.layer2(x1)
+        x2 = self.cot2(x2)
         x3 = self.layer3(x2)
+        x3 = self.cot3(x3)
         x4 = self.layer4(x3)
+        x4 = self.cot4(x4)
         return x1, x2, x3, x4
 
     def get_transformer_features(self, x):
