@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import numpy as np
 import psutil
+import random
 class ContrastiveDataset(CacheDataset):
     def __init__(self, csv_file, args, transform=None):
         self.task = args.task
@@ -28,6 +29,11 @@ class ContrastiveDataset(CacheDataset):
                 cache_rate=cache_rate,  # 缓存全部数据
                 num_workers=args.num_workers,  # 多线程加载
             )
+    def _shuffle_data(self):
+        # 打乱数据顺序，确保每次加载顺序不同
+        combined = list(zip(self.subject_id, self.event_id, self.labels))
+        random.shuffle(combined)
+        self.subject_id, self.event_id, self.labels = zip(*combined)
 
     def _get_cache_rate(self):
         """
@@ -81,10 +87,9 @@ class ContrastiveDataset(CacheDataset):
 
         if self.transform:
             data = self.transform(data)  # 应用数据变换
-        fa = torch.tensor(data[0,:,:,:]).unsqueeze(0)
-        l1 = torch.tensor(data[1,:,:,:]).unsqueeze(0)
-        md = torch.tensor(data[2,:,:,:]).unsqueeze(0)
-        data = (fa, l1, md)
+        fa = torch.tensor(data[0, :, :, :], dtype=torch.float32).unsqueeze(0)
+        md = torch.tensor(data[1, :, :, :], dtype=torch.float32).unsqueeze(0)
+        data = (fa, md)
         return data, label
 
     def _load_npz(self, idx):
@@ -94,7 +99,7 @@ class ContrastiveDataset(CacheDataset):
         :return: 数据数组（形状为 (channels, depth, height, width)）
         """
         # 构建文件路径模式
-        file_pattern = f"{self.subject_id[idx]}_FA_L1_MD_2mm.npz"
+        file_pattern = f"{self.subject_id[idx]}_FA_MD_1mm_float16.npz"
         file_path = os.path.join(
             self.root_dir,
             self.event_id[idx],
@@ -112,7 +117,7 @@ class ContrastiveDataset(CacheDataset):
         npz_data = np.load(file_path)
 
         # 检查数据键是否存在
-        if "data" not in npz_data:
+        if "arr_0" not in npz_data:
             raise KeyError(f"Key 'data' not found in .npz file: {file_path}")
 
-        return npz_data["data"]
+        return npz_data["arr_0"]

@@ -1,32 +1,34 @@
-import torch
-from data import ROIDataset
+from data import ContrastiveDataset
 from collections import Counter
-from torch.utils.data import DataLoader, Subset
-from torch.nn import DataParallel
+from torch.utils.data import Subset
 from torch.optim.lr_scheduler import StepLR
 from models import create_model
-from utils import rename_log_file, train_epoch, log_confusion_matrix, log_fold_results
+from utils import rename_log_file, log_confusion_matrix, log_fold_results
 import numpy as np
 import logging
 from statistics import mean, stdev
-from utils.eval import eval_model, save_best_model
+from utils.eval import save_best_model
 from sklearn.model_selection import KFold
 from utils.utils import set_seed
-from torchvision import transforms
-from collections import defaultdict
-import os
-import time
-import logging
+from tqdm import tqdm
+from sklearn.metrics import confusion_matrix, roc_auc_score
+from utils.eval import calculate_metrics
 import argparse
-
+import torch
+import time
+from contrastive_utils import create_positive_negative_pairs, contrastive_loss, compute_contrastive_ssim_loss
+import os
+from torch.utils.data import DataLoader
+from torch.nn import DataParallel
+from torch.cuda.amp import autocast
 def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate.')
-    parser.add_argument('--model_name', type=str, default='3D_ResNet18', help='Name of the model to use.')
+    parser.add_argument('--model_name', type=str, default='contrastive_model1', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
-    parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
+    parser.add_argument('--bs', type=int, default=16, help='I3D C3D cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=bool, default=False, help='small sample for debugging.')
 
@@ -66,44 +68,27 @@ def setup_training_environment():
     logging.info(f"Training with {device}")
 
     return args, device, log_file, timestamp
-
 args, device, log_file, timestamp = setup_training_environment()
-csv_file = './data/data.csv'
 
-channels = ["06LDHs","07LDHk","FA","L1","L23m","MD"]
-dataset = ROIDataset(csv_file, args, channels)
+csv_file = 'data/data.csv'
+
+dataset = ContrastiveDataset(csv_file, args)
 
 seed = 42
 set_seed(seed)
-# 下面这两项取反可确保可重复性，但是降低训练速度
+
 torch.backends.cudnn.deterministic = False
-torch.backends.cudnn.benchmark = True  # CuDNN 的自动优化
-
-
+torch.backends.cudnn.benchmark = True
 
 all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
                                          'precision', 'recall', 'specificity']}
 
 
-subject_id = np.array(dataset.subject_id)
-unique_ids = np.unique(subject_id)
 k_folds = 5
 kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+indices = np.arange(len(dataset))
 
-subject_to_indices = defaultdict(list)
-for idx, subject in enumerate(subject_id):
-    subject_to_indices[subject].append(idx)
-
-for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
-    logging.info(f'Fold {fold+1} Start')
-    logging.info('--------------------------------------------------------------------')
-
-    train_participants = unique_ids[train_ids]
-    val_participants = unique_ids[val_ids]
-
-    train_indices = np.concatenate([subject_to_indices[subject] for subject in train_participants])
-    val_indices = np.concatenate([subject_to_indices[subject] for subject in val_participants])
-
+for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
     train_subset = Subset(dataset, train_indices)
     val_subset = Subset(dataset, val_indices)
 
@@ -131,15 +116,13 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     train_loader = DataLoader(train_subset, batch_size=args.bs, shuffle=True)
     val_loader = DataLoader(val_subset, batch_size=args.bs, shuffle=False)
 
-    model = create_model(args.model_name).to(device)
+    model = create_model(args.model_name)
+    model = DataParallel(model).to(device)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = StepLR(optimizer, step_size=15, gamma=0.8)
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
+
     loss_function = torch.nn.CrossEntropyLoss()
-
-    if torch.cuda.device_count() > 1:
-        device_ids = list(range(torch.cuda.device_count()))
-        model = DataParallel(model, device_ids=device_ids).to(device)
-
 
     best_metric = {
         'accuracy': 0,
@@ -151,10 +134,10 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     }
     max_epochs = args.epochs
 
-    val_start = 20
-    val_interval = 1
+    val_start = 0
+    val_interval = 5
 
-    early_stop_start = 20
+    early_stop_start = 30
     patience = 5
     min_delta = 0.001
     best_val_metric = 0
@@ -167,10 +150,113 @@ for fold, (train_ids, val_ids) in enumerate(kfold.split(unique_ids)):
     result_preds = None
     result_probs = None
 
+
     for epoch in range(max_epochs):
-        train_epoch(model, train_loader, loss_function, optimizer, device)
-        eval_metrics, cm, all_labels, all_preds, all_probs = eval_model(model=model, dataloader=val_loader, device=device, epoch=epoch+1)
+        model.train()
+        epoch_loss = 0
+        contrastive_loss_total = 0
+        classification_loss_total = 0
+        ssim_loss_total = 0
+        step = 0
+
+        for batch_idx, (data, labels) in tqdm(enumerate(train_loader)):
+            optimizer.zero_grad()
+            # 1. 提取 fa, md 数据
+            fa_data, md_data = data
+            labels = labels.to(device)
+            # 2. 获取嵌入 (第一阶段: 对比学习)
+            fa_logit, fa_map, fa_emb, md_logit, md_map, md_emb, out_logit = model(fa_data, md_data)
+            # 3. 构造正负样本对
+            pos_pairs, neg_pairs = create_positive_negative_pairs(labels)
+            if not pos_pairs or not neg_pairs:
+                continue
+            step += 1
+            # 4. 计算对比损失
+            ssim_loss = compute_contrastive_ssim_loss(fa_map, md_map, pos_pairs, neg_pairs, margin=1.0)
+            # ssim_loss = 0
+            contrastive_loss_val = contrastive_loss(fa_emb, md_emb, pos_pairs, neg_pairs, margin=1.0)
+            # 5. 计算分类损失
+            fa_loss = loss_function(fa_logit,labels)
+            md_loss = loss_function(md_logit, labels)
+            classification_loss = loss_function(out_logit, labels)
+            # 6. 计算总损失
+            alpha = 1
+            beta = 1
+            gamma = 1
+            total_loss = gamma * ssim_loss + alpha * contrastive_loss_val + beta * (fa_loss + md_loss + classification_loss)
+            # 7. 反向传播 + 优化
+            total_loss.backward()
+            optimizer.step()
+            # 8. 记录损失值
+            ssim_loss_total += ssim_loss.item()
+            contrastive_loss_total += contrastive_loss_val.item()
+            classification_loss_total += classification_loss.item()
+        # 计算平均损失
+
+        avg_epoch_loss = (ssim_loss_total + contrastive_loss_total + classification_loss_total) / step
+        avg_ssim_loss = ssim_loss_total / step
+        avg_contrastive_loss = contrastive_loss_total / step
+        avg_classification_loss = classification_loss_total / step
+        logging.info(
+            f"Epoch {epoch + 1} - Total Loss: {avg_epoch_loss:.4f}, "
+            f"SSIM Loss: {avg_ssim_loss:.4f}, "
+            f"Contrastive Loss: {avg_contrastive_loss:.4f}, "
+            f"Classification Loss: {avg_classification_loss:.4f}"
+        )
+        scheduler.step()
         if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
+            model.eval()
+            all_labels = []
+            all_preds = []
+            all_probs = []
+            with torch.no_grad():
+                for data, labels in tqdm(val_loader):
+                    fa_data, md_data = data
+                    labels = labels.to(device)
+                    fa_logit, fa_map, fa_emb, md_logit, md_map, md_emb, out_logit = model(fa_data, md_data)
+                    preds = torch.argmax(out_logit, dim=1)
+                    probs = torch.nn.functional.softmax(out_logit, dim=1)
+                    all_labels.extend(labels.cpu().numpy())
+                    all_preds.extend(preds.cpu().numpy())
+                    all_probs.extend(probs.cpu().numpy())
+            all_labels = np.array(all_labels)
+            all_preds = np.array(all_preds)
+            all_probs = np.array(all_probs)
+            cm = confusion_matrix(all_labels, all_preds)
+            result = calculate_metrics(cm)
+            accuracy = result['accuracy']
+            balanced_accuracy = result['balanced_accuracy']
+            kappa = result['kappa']
+            recall = result['recall']
+            specificity = result['specificity']
+            precision = result['precision']
+            f1 = result['f1']
+            try:
+                auc = roc_auc_score(all_labels, all_probs[:, 1], average='macro', multi_class='ovr')
+            except ValueError:
+                auc = 0.0
+            avg_metrics = {
+                'accuracy': accuracy,
+                'balanced_accuracy': balanced_accuracy,
+                'kappa': kappa,
+                'auc': auc,
+                'f1': f1,
+                'precision': precision,
+                'recall': recall,
+                'specificity': specificity
+            }
+            logging.info(
+                f"Val:{epoch + 1} | "
+                f"Accuracy: {avg_metrics['accuracy']:.4f} | "
+                f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
+                f"Kappa: {avg_metrics['kappa']:.4f} | "
+                f"AUC: {avg_metrics['auc']:.4f} | "
+                f"F1: {avg_metrics['f1']:.4f} | "
+                f"Pre: {avg_metrics['precision']:.4f} | "
+                f"Recall: {avg_metrics['recall']:.4f} | "
+                f"Spec: {avg_metrics['specificity']:.4f}"
+            )
+            eval_metrics = avg_metrics
             current_val_metric = eval_metrics['accuracy']
             if result_cm is None:
                 result_metric = eval_metrics
