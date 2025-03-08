@@ -43,56 +43,48 @@ def calculate_metrics(cm):
         'f1': f1
     }
 
-def eval_model(model, dataloader, device, epoch):
+def eval_model(model, val_loader, device, calculate_metrics, epoch, logging):
     model.eval()
     all_labels = []
     all_preds = []
     all_probs = []
+
     with torch.no_grad():
-        for data in tqdm(dataloader):
-            inputs, labels = data
-            inputs, labels = inputs.to(device), labels.to(device)
-
-            outputs = model(inputs)
-            probs = outputs.softmax(dim=1)
-            _, preds = torch.max(outputs, 1)
-
+        for data, labels in tqdm(val_loader):
+            fa_data, md_data = data
+            labels = labels.to(device)
+            fa_logit, fa_map, fa_emb, md_logit, md_map, md_emb, out_logit = model(fa_data, md_data)
+            preds = torch.argmax(out_logit, dim=1)
+            probs = torch.nn.functional.softmax(out_logit, dim=1)
             all_labels.extend(labels.cpu().numpy())
             all_preds.extend(preds.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
 
-    all_labels = torch.tensor(all_labels)
-    all_preds = torch.tensor(all_preds)
-    all_probs = np.array(all_probs)  # 先转换为一个单一的 numpy.ndarray
-    all_probs = torch.tensor(all_probs)
+    all_labels = np.array(all_labels)
+    all_preds = np.array(all_preds)
+    all_probs = np.array(all_probs)
+
     cm = confusion_matrix(all_labels, all_preds)
     result = calculate_metrics(cm)
 
-    accuracy = result['accuracy']
-    balanced_accuracy = result['balanced_accuracy']
-    kappa = result['kappa']
-    recall = result['recall']
-    specificity = result['specificity']
-    precision = result['precision']
-    f1 = result['f1']
-
     try:
-        auc = roc_auc_score(all_labels, all_probs[:,1], average='macro', multi_class='ovr')
+        auc = roc_auc_score(all_labels, all_probs[:, 1], average='macro', multi_class='ovr')
     except ValueError:
         auc = 0.0
 
     avg_metrics = {
-        'accuracy': accuracy,
-        'balanced_accuracy': balanced_accuracy,
-        'kappa': kappa,
+        'accuracy': result['accuracy'],
+        'balanced_accuracy': result['balanced_accuracy'],
+        'kappa': result['kappa'],
         'auc': auc,
-        'f1': f1,
-        'precision': precision,
-        'recall': recall,
-        'specificity': specificity
+        'f1': result['f1'],
+        'precision': result['precision'],
+        'recall': result['recall'],
+        'specificity': result['specificity']
     }
+
     logging.info(
-        f"Val:{epoch} | "
+        f"Val:{epoch + 1} | "
         f"Accuracy: {avg_metrics['accuracy']:.4f} | "
         f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
         f"Kappa: {avg_metrics['kappa']:.4f} | "
