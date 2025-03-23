@@ -2,7 +2,7 @@ import logging
 from tqdm import tqdm
 from contrastive_utils import create_positive_negative_pairs, contrastive_loss, compute_contrastive_ssim_loss
 import torch
-def train_epoch(model, train_loader, optimizer, scheduler, device):
+def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
     model.train()
     contrastive_loss_total = 0
     classification_loss_total = 0
@@ -53,10 +53,38 @@ def train_epoch(model, train_loader, optimizer, scheduler, device):
     avg_classification_loss = classification_loss_total / step
 
     logging.info(
-        f"Epoch Training - Total Loss: {avg_epoch_loss:.4f}, "
+        f"Epoch {epoch+1} - Total Loss: {avg_epoch_loss:.4f}, "
         f"SSIM Loss: {avg_ssim_loss:.4f}, "
         f"Contrastive Loss: {avg_contrastive_loss:.4f}, "
         f"Classification Loss: {avg_classification_loss:.4f}"
+    )
+    scheduler.step()
+    return
+
+def graph_train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
+    model.train()
+    classification_loss_total = 0
+    step = 0
+    loss_function = torch.nn.CrossEntropyLoss()
+    for batch_idx, data in tqdm(enumerate(train_loader), total=len(train_loader)):
+        data = data.to(device)
+        labels = data.y
+        optimizer.zero_grad()
+        out_logit = model(data)
+
+        step += 1
+        classification_loss = loss_function(out_logit, labels)
+
+        # 7. 反向传播 + 优化
+        classification_loss.backward()
+        optimizer.step()
+
+        classification_loss_total += classification_loss.item()
+
+    avg_classification_loss = classification_loss_total / step
+
+    logging.info(
+        f"Epoch {epoch+1} - Total Loss: {avg_classification_loss:.4f}"
     )
     scheduler.step()
     return

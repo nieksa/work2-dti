@@ -125,9 +125,12 @@ def compute_contrastive_ssim_loss(map_fa, map_md, positive_pairs, negative_pairs
     # 计算正样本对的 SSIM 损失
     for pair in positive_pairs:
         idx1, idx2 = pair[0], pair[1]
-        ssim_fa_md = compute_3d_max_pool_ssim(map_fa, map_md, idx1, idx2)
-        positive_loss += (1 - ssim_fa_md)  # SSIM 越高，损失越低
+        ssim_fa_md = compute_3d_max_pool_ssim(map_fa, map_md, idx1, idx1)
+        ssim_fa = compute_3d_max_pool_ssim(map_fa, map_fa, idx1, idx2)
+        ssim_md = compute_3d_max_pool_ssim(map_md, map_md, idx1, idx2)
+        positive_loss += 1 - (ssim_fa_md - ssim_fa - ssim_md)/3  # SSIM 越高，损失越低
     positive_loss /= len(positive_pairs)
+
     # 计算负样本对的 SSIM 损失
     for pair in negative_pairs:
         idx1, idx2 = pair[0], pair[1]
@@ -139,28 +142,49 @@ def compute_contrastive_ssim_loss(map_fa, map_md, positive_pairs, negative_pairs
 
 
 def contrastive_loss(embedding_fa, embedding_md, positive_pairs, negative_pairs, margin=1.0):
-    # 1. 提取所有正负样本对的索引
-    positive_indices_fa = [pair[0] for pair in positive_pairs]
-    positive_indices_md = [pair[1] for pair in positive_pairs]
-    negative_indices_fa = [pair[0] for pair in negative_pairs]
-    negative_indices_md = [pair[1] for pair in negative_pairs]
+    # positive_indices_fa = [pair[0] for pair in positive_pairs]
+    # positive_indices_md = [pair[1] for pair in positive_pairs]
+    # negative_indices_fa = [pair[0] for pair in negative_pairs]
+    # negative_indices_md = [pair[1] for pair in negative_pairs]
+    # positive_distances_fa = F.pairwise_distance(embedding_fa[positive_indices_fa], embedding_fa[positive_indices_md],
+    #                                             p=2)
+    # positive_distances_md = F.pairwise_distance(embedding_md[positive_indices_fa], embedding_md[positive_indices_md],
+    #                                             p=2)
+    # positive_loss = (positive_distances_fa.pow(2) + positive_distances_md.pow(2)).mean()
+    # negative_distances_fa = F.pairwise_distance(embedding_fa[negative_indices_fa], embedding_fa[negative_indices_md],
+    #                                             p=2)
+    # negative_distances_md = F.pairwise_distance(embedding_md[negative_indices_fa], embedding_md[negative_indices_md],
+    #                                             p=2)
+    # negative_loss = F.relu(margin - negative_distances_fa).pow(2).mean() + F.relu(margin - negative_distances_md).pow(
+    #     2).mean()
+    # total_loss = positive_loss + negative_loss
+    # return total_loss
+    """
+    计算对比损失，包括跨模态和跨样本的正负样本对损失
+    :param embedding_fa: FA 模态的嵌入，形状为 (batch_size, embedding_dim)
+    :param embedding_md: MD 模态的嵌入，形状为 (batch_size, embedding_dim)
+    :param positive_pairs: 正样本对，形状为 (2, num_positive_pairs)，分别对应 FA 和 MD 的样本索引
+    :param negative_pairs: 负样本对，形状为 (2, num_negative_pairs)，分别对应 FA 和 MD 的样本索引
+    :param margin: 负样本对的边界，控制负样本的损失
+    :return: 计算的对比损失
+    """
+    positive_loss = 0.0
+    negative_loss = 0.0
+    for pair in positive_pairs:
+        idx1, idx2 = pair[0], pair[1]
+        positive_distance_fa_md = F.pairwise_distance(embedding_fa[idx1].unsqueeze(0), embedding_md[idx1].unsqueeze(0), p=2)
+        positive_distance_fa = F.pairwise_distance(embedding_fa[idx1].unsqueeze(0), embedding_fa[idx2].unsqueeze(0), p=2)
+        positive_distance_md = F.pairwise_distance(embedding_md[idx1].unsqueeze(0), embedding_md[idx2].unsqueeze(0), p=2)
+        positive_loss += (positive_distance_fa_md.pow(2) + positive_distance_fa.pow(2) + positive_distance_md.pow(2))
+    positive_loss /= (len(positive_pairs)*3)
 
-    # 2. 计算所有正样本对的损失
-    positive_distances_fa = F.pairwise_distance(embedding_fa[positive_indices_fa], embedding_fa[positive_indices_md],
-                                                p=2)
-    positive_distances_md = F.pairwise_distance(embedding_md[positive_indices_fa], embedding_md[positive_indices_md],
-                                                p=2)
-    positive_loss = (positive_distances_fa.pow(2) + positive_distances_md.pow(2)).mean()
-
-    # 3. 计算所有负样本对的损失
-    negative_distances_fa = F.pairwise_distance(embedding_fa[negative_indices_fa], embedding_fa[negative_indices_md],
-                                                p=2)
-    negative_distances_md = F.pairwise_distance(embedding_md[negative_indices_fa], embedding_md[negative_indices_md],
-                                                p=2)
-    negative_loss = F.relu(margin - negative_distances_fa).pow(2).mean() + F.relu(margin - negative_distances_md).pow(
-        2).mean()
-
-    # 总损失
+    for pair in negative_pairs:
+        idx1, idx2 = pair[0], pair[1]
+        negative_distances_fa_md = F.pairwise_distance(embedding_fa[idx1].unsqueeze(0),embedding_md[idx1].unsqueeze(0), p=2)
+        negative_distances_fa = F.pairwise_distance(embedding_fa[idx1].unsqueeze(0),embedding_fa[idx2].unsqueeze(0), p=2)
+        negative_distances_md = F.pairwise_distance(embedding_md[idx1].unsqueeze(0),embedding_md[idx2].unsqueeze(0), p=2)
+        negative_loss += F.relu(margin - negative_distances_fa_md).pow(2) + F.relu(margin - negative_distances_fa).pow(2) + F.relu(margin - negative_distances_md).pow(2)
+    negative_loss /= (len(negative_pairs)*3)
     total_loss = positive_loss + negative_loss
     return total_loss
 

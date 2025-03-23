@@ -1,21 +1,24 @@
+# 1.根据csv文件按照固定seed划分成11份。有一份作为测试集
+# 2.总共10份作为节点，测试增量过程的模型能力（在测试集上的验证），遗忘程度（使用当前时间节点前所进入训练的数据）
+# 3.对上述过程进行五折交叉验证。
 import argparse
 import torch
 import time
 import os
 import numpy as np
 import logging
-from data import ContrastiveDataset
+from data import GraphDataset
 from collections import Counter
 from torch.utils.data import Subset
 from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader
 from torch.nn import DataParallel
 from models import create_model
 from statistics import mean, stdev
 from utils import rename_log_file, log_confusion_matrix, log_fold_results
-from utils.eval import save_best_model, calculate_metrics, eval_model
+from utils.eval import save_best_model, calculate_metrics, graph_eval_model
 from utils.utils import set_seed
-from utils.train import train_epoch
+from utils.train import graph_train_epoch
 from sklearn.model_selection import KFold
 
 def setup_training_environment():
@@ -23,16 +26,16 @@ def setup_training_environment():
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
-    parser.add_argument('--model_name', type=str, default='contrastive_model1', help='Name of the model to use.')
+    parser.add_argument('--model_name', type=str, default='graph_model1', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
-    parser.add_argument('--bs', type=int, default=4, help='I3D C3D cuda out of memory.')
+    parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=int, choices=[0, 1], default=0, help='Set 1 for debug mode, 0 for normal mode.')
     parser.add_argument('--pick_metric_name', type=str, default='accuracy', choices=['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1', 'precision', 'recall', 'specificity'], help='Metric used for evaluation.')
     parser.add_argument('--val_start', type=int, default=30, help='Epoch to start validation.')
     parser.add_argument('--val_interval', type=int, default=1, help='How often to perform validation.')
     parser.add_argument('--early_stop_start', type=int, default=30, help='Epoch to start monitoring for early stopping.')
-    parser.add_argument('--patience', type=int, default=5, help='Number of epochs to wait before stopping if no improvement.')
+    parser.add_argument('--patience', type=int, default=10, help='Number of epochs to wait before stopping if no improvement.')
     args = parser.parse_args()
     log_dir = f'./logs/{args.task}'
     os.makedirs(log_dir, exist_ok=True)
@@ -62,7 +65,7 @@ def main():
     args, device, log_file, timestamp = setup_training_environment()
     args.debug = bool(args.debug)
     csv_file = 'data/data.csv'
-    dataset = ContrastiveDataset(csv_file, args)
+    dataset = GraphDataset(csv_file, args)
 
     all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
                                              'precision', 'recall', 'specificity']}
@@ -137,9 +140,9 @@ def main():
         result_probs = None
         max_epochs = args.epochs
         for epoch in range(max_epochs):
-            train_epoch(model, train_loader, optimizer, scheduler, device, epoch)
+            graph_train_epoch(model, train_loader, optimizer, scheduler, device, epoch)
             if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
-                avg_metrics, cm, all_labels, all_preds, all_probs = eval_model(model, val_loader, device, calculate_metrics, epoch, logging)
+                avg_metrics, cm, all_labels, all_preds, all_probs = graph_eval_model(model, val_loader, device, calculate_metrics, epoch, logging)
                 eval_metrics = avg_metrics
                 current_val_metric = eval_metrics['accuracy']
                 if result_cm is None:

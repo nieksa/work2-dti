@@ -114,4 +114,55 @@ def save_best_model(model_weights, eval_metric, best_metric, best_metric_model, 
         torch.save(model_weights,best_metric_model[metric_name])
 
 
+def graph_eval_model(model, val_loader, device, calculate_metrics, epoch, logging):
+    model.eval()
+    all_labels = []
+    all_preds = []
+    all_probs = []
 
+    with torch.no_grad():
+        for data in tqdm(val_loader):
+            data = data.to(device)
+            labels = data.y
+            out_logit = model(data)
+            preds = torch.argmax(out_logit, dim=1)
+            probs = torch.nn.functional.softmax(out_logit, dim=1)
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
+
+    all_labels = np.array(all_labels)
+    all_preds = np.array(all_preds)
+    all_probs = np.array(all_probs)
+
+    cm = confusion_matrix(all_labels, all_preds)
+    result = calculate_metrics(cm)
+
+    try:
+        auc = roc_auc_score(all_labels, all_probs[:, 1], average='macro', multi_class='ovr')
+    except ValueError:
+        auc = 0.0
+
+    avg_metrics = {
+        'accuracy': result['accuracy'],
+        'balanced_accuracy': result['balanced_accuracy'],
+        'kappa': result['kappa'],
+        'auc': auc,
+        'f1': result['f1'],
+        'precision': result['precision'],
+        'recall': result['recall'],
+        'specificity': result['specificity']
+    }
+
+    logging.info(
+        f"Val:{epoch + 1} | "
+        f"Accuracy: {avg_metrics['accuracy']:.4f} | "
+        f"BA: {avg_metrics['balanced_accuracy']:.4f} | "
+        f"Kappa: {avg_metrics['kappa']:.4f} | "
+        f"AUC: {avg_metrics['auc']:.4f} | "
+        f"F1: {avg_metrics['f1']:.4f} | "
+        f"Pre: {avg_metrics['precision']:.4f} | "
+        f"Recall: {avg_metrics['recall']:.4f} | "
+        f"Spec: {avg_metrics['specificity']:.4f}"
+    )
+    return avg_metrics, cm, all_labels, all_preds, all_probs
