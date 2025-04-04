@@ -120,6 +120,43 @@ class FusionModule(nn.Module):
         out = self.classifier(fused)
         return out
     
+class Simple3DViT(nn.Module):
+    def __init__(self, in_channels=128, hidden_dim=128, num_heads=4):
+        super(Simple3DViT, self).__init__()
+        self.proj = nn.Conv3d(in_channels, hidden_dim, kernel_size=1)  # 线性投影
+        self.transformer = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads, batch_first=True),
+            num_layers=4
+        )
+        self.output_layer = nn.Conv3d(hidden_dim, 1, kernel_size=1)  # 降维到 1 维通道
+    
+    def forward(self, x):
+        B, C, D, H, W = x.shape  # (batch, 128, 12, 24, 12)
+        x = self.proj(x)  # 变换通道数 (B, 128, 12, 24, 12) -> (B, 128, 12, 24, 12)
+        x = x.flatten(2).permute(2, 0, 1)  # 变换为 Transformer 输入 (D*H*W, B, C)
+        x = self.transformer(x)  # Transformer 处理
+        x = x.permute(1, 2, 0).reshape(B, 128, D, H, W)  # 变回 3D 结构
+        x = self.output_layer(x)  # 变换通道数到 1 (B, 1, 12, 24, 12)
+        return x
+    
+class feature_map_to_heatmap(nn.Module):
+    def __init__(self):
+        super(feature_map_to_heatmap, self).__init__()
+        # self.fa_heatmap = 一个接受128,23,28,23的vit模型，然后输出1,1,23,28,23的heatmap
+        # self.mri_heatmap = 一个接受128,12,14,12的vit模型，然后输出1,1,12,14,12的heatmap
+        # 下采样模块，把128，23，28，23的fa_feature_map下采样到128，12，14，12
+        self.downsample = nn.Sequential(
+            nn.Conv3d(in_channels=128, out_channels=128, kernel_size=3, stride=2, padding=1)
+        )
+        self.fa_heatmap = Simple3DViT(in_channels=128, hidden_dim=128, num_heads=4)
+        self.mri_heatmap = Simple3DViT(in_channels=128, hidden_dim=128, num_heads=4)
+    def forward(self, fa, mri):
+        fa = self.downsample(fa)
+        fa_heatmap = self.fa_heatmap(fa)
+        mri_heatmap = self.mri_heatmap(mri)
+        return fa_heatmap, mri_heatmap
+        
+
 class FA_MRI_contrastive_model(nn.Module):
     def __init__(self, **kwargs):
         super(FA_MRI_contrastive_model, self).__init__()
@@ -128,7 +165,7 @@ class FA_MRI_contrastive_model(nn.Module):
         self.fa_classifier = Classifier()
         self.mri_classifier = Classifier()
         self.fusion_block = FusionModule()
-        
+        self.feature_map_to_heatmap = feature_map_to_heatmap()
         # 添加FA数据的下采样层
         self.fa_downsample = nn.Sequential(
             nn.Conv3d(1, 1, kernel_size=2, stride=2, padding=0),
@@ -141,7 +178,8 @@ class FA_MRI_contrastive_model(nn.Module):
         fa_logit = self.fa_classifier(fa_embedding)
         mri_logit = self.mri_classifier(mri_embedding)
         fusion_logit = self.fusion_block(fa_embedding, mri_embedding)
-        return fa_logit,fa_feature_map,fa_embedding,mri_logit,mri_feature_map,mri_embedding,fusion_logit
+        fa_heatmap, mri_heatmap = self.feature_map_to_heatmap(fa_feature_map, mri_feature_map)
+        return fa_logit,fa_heatmap,fa_embedding,mri_logit,mri_heatmap,mri_embedding,fusion_logit
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

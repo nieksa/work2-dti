@@ -44,6 +44,8 @@ def gaussian_3d(window_size, sigma):
 
 def compute_3d_ssim(img1, img2, window_size=11, sigma=1.5):
     """ 计算 3D SSIM """
+    # print(img1.shape)
+    # print(img2.shape)
     assert img1.shape == img2.shape, "输入图像形状必须一致"
 
     # 生成 3D 高斯窗口
@@ -142,23 +144,6 @@ def compute_contrastive_ssim_loss(map_fa, map_md, positive_pairs, negative_pairs
 
 
 def contrastive_loss(embedding_fa, embedding_md, positive_pairs, negative_pairs, margin=1.0):
-    # positive_indices_fa = [pair[0] for pair in positive_pairs]
-    # positive_indices_md = [pair[1] for pair in positive_pairs]
-    # negative_indices_fa = [pair[0] for pair in negative_pairs]
-    # negative_indices_md = [pair[1] for pair in negative_pairs]
-    # positive_distances_fa = F.pairwise_distance(embedding_fa[positive_indices_fa], embedding_fa[positive_indices_md],
-    #                                             p=2)
-    # positive_distances_md = F.pairwise_distance(embedding_md[positive_indices_fa], embedding_md[positive_indices_md],
-    #                                             p=2)
-    # positive_loss = (positive_distances_fa.pow(2) + positive_distances_md.pow(2)).mean()
-    # negative_distances_fa = F.pairwise_distance(embedding_fa[negative_indices_fa], embedding_fa[negative_indices_md],
-    #                                             p=2)
-    # negative_distances_md = F.pairwise_distance(embedding_md[negative_indices_fa], embedding_md[negative_indices_md],
-    #                                             p=2)
-    # negative_loss = F.relu(margin - negative_distances_fa).pow(2).mean() + F.relu(margin - negative_distances_md).pow(
-    #     2).mean()
-    # total_loss = positive_loss + negative_loss
-    # return total_loss
     """
     计算对比损失，包括跨模态和跨样本的正负样本对损失
     :param embedding_fa: FA 模态的嵌入，形状为 (batch_size, embedding_dim)
@@ -188,6 +173,36 @@ def contrastive_loss(embedding_fa, embedding_md, positive_pairs, negative_pairs,
     total_loss = positive_loss + negative_loss
     return total_loss
 
+def compute_contrastive_heatmap_ssim_loss(map_fa, map_mri, positive_pairs, negative_pairs, margin=1.0):
+    """
+    计算对比学习中的 SSIM 损失（考虑正负样本对）
+    :param map_fa: FA 模态的特征图，形状为 (batch_size, C, D, H, W) batch, 1, 12, 24, 12
+    :param map_mri: MRI 模态的特征图，形状为 (batch_size, C, D, H, W) batch, 1, 12, 24, 12
+    :param positive_pairs: 正样本对，形状为 (2, num_positive_pairs)
+    :param negative_pairs: 负样本对，形状为 (2, num_negative_pairs)
+    :param margin: 负样本对的 SSIM 边界，控制负样本的损失
+    :return: 计算的 SSIM 损失
+    """
+    positive_loss = 0.0
+    negative_loss = 0.0
+
+    # 计算正样本对的 SSIM 损失
+    for pair in positive_pairs:
+        idx1, idx2 = pair[0], pair[1]
+        ssim_fa_mri = compute_3d_ssim(map_fa[idx1,:,:,:].unsqueeze(0), map_mri[idx1,:,:,:].unsqueeze(0), window_size=11, sigma=1.5)
+        ssim_fa = compute_3d_ssim(map_fa[idx1,:,:,:].unsqueeze(0), map_fa[idx2,:,:,:].unsqueeze(0), window_size=11, sigma=1.5)
+        ssim_mri = compute_3d_ssim(map_mri[idx1,:,:,:].unsqueeze(0), map_mri[idx2,:,:,:].unsqueeze(0), window_size=11, sigma=1.5)
+        positive_loss += 1 - (ssim_fa_mri - ssim_fa - ssim_mri)/3  # SSIM 越高，损失越低
+    positive_loss /= len(positive_pairs)
+
+    # 计算负样本对的 SSIM 损失
+    for pair in negative_pairs:
+        idx1, idx2 = pair[0], pair[1]
+        ssim_fa_mri = compute_3d_ssim(map_fa[idx1,:,:,:].unsqueeze(0), map_mri[idx2,:,:,:].unsqueeze(0), window_size=11, sigma=1.5)
+        negative_loss += max(0, margin - ssim_fa_mri)  # 超过 margin 则增加损失
+    negative_loss /= len(negative_pairs)
+    total_loss = positive_loss + negative_loss
+    return total_loss
 
 if __name__ == "__main__":
     # 设定随机种子保证可复现
