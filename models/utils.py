@@ -2,7 +2,9 @@ import torch
 from models.compare.resnet import generate_model as generate_resnet
 from models.model_design_for_3d import vit_3d_resnet_fusion, vit_3d_resnet_fusion_contrastive_learning
 from models.contrastive_model1 import FA_MD_contrastive_model
+from models.contrastive_model2 import FA_MRI_contrastive_model
 from models.graph_model import GCNClassifier, GATClassifier, GraphSAGEClassifier
+
 def create_model(model_name):
     # 3D 数据
     if model_name == '3D_ResNet18':
@@ -14,7 +16,8 @@ def create_model(model_name):
         model = vit_3d_resnet_fusion_contrastive_learning(18, n_input_channels=1, n_classes=2)
     elif model_name == 'contrastive_model1':
         model = FA_MD_contrastive_model(18,n_input_channels=1, n_classes=2)
-
+    elif model_name == 'contrastive_model2':
+        model = FA_MRI_contrastive_model()
     # 图结构数据
     elif model_name == 'graph_model_gcn':
         model = GCNClassifier(in_channels=18, hidden_channels=64, out_channels=2)

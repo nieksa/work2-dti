@@ -3,10 +3,9 @@ from monai.data import CacheDataset
 import pandas as pd
 import os
 import numpy as np
-import psutil
 import random
 from sklearn.utils import resample
-class ContrastiveDataset(CacheDataset):
+class VoxelDataset(CacheDataset):
     def __init__(self, csv_file, args, transform=None):
         self.task = args.task
         self.args = args
@@ -19,7 +18,9 @@ class ContrastiveDataset(CacheDataset):
         self.debug = args.debug
         self.debug_size = 20
 
-        cache_rate = self._get_cache_rate()
+        # 打乱数据顺序，确保每次加载顺序不同
+        self._shuffle_data()
+
         if self.debug:
             self.subject_id = self.subject_id[:self.debug_size]
             self.event_id = self.event_id[:self.debug_size]
@@ -27,31 +28,14 @@ class ContrastiveDataset(CacheDataset):
             super().__init__(
                 data=list(zip(self.subject_id, self.event_id, self.labels)),
                 transform=transform,
-                cache_rate=cache_rate,  # 缓存全部数据
                 num_workers=args.num_workers,  # 多线程加载
             )
+
     def _shuffle_data(self):
         # 打乱数据顺序，确保每次加载顺序不同
         combined = list(zip(self.subject_id, self.event_id, self.labels))
         random.shuffle(combined)
         self.subject_id, self.event_id, self.labels = zip(*combined)
-
-    def _get_cache_rate(self):
-        """
-        根据内存大小和数据量动态设置 cache_rate
-        :return: 缓存比例
-        """
-        # 获取内存信息
-        memory_info = psutil.virtual_memory()
-        available_memory = memory_info.available  # 可用内存（字节）
-
-        # 估算数据集大小（假设每个样本 100MB）
-        sample_size = 10 * 1024 * 1024  # 100MB
-        total_data_size = len(self.subject_id) * sample_size
-
-        # 计算缓存比例
-        cache_rate = min(1.0, available_memory / total_data_size)
-        return cache_rate
 
     def _filter_samples(self, df):
         """根据任务类型筛选样本并转换标签"""
@@ -102,42 +86,83 @@ class ContrastiveDataset(CacheDataset):
         :param idx: 样本索引
         :return: 数据和标签
         """
-        data = self._load_npz(idx)
+        fa_data = self._load_dti(idx, 'FA')
+        mri_data = self._load_mri(idx)
         label = self.labels[idx]
+
+        data = (fa_data, mri_data)
 
         if self.transform:
             data = self.transform(data)  # 应用数据变换
-        fa = torch.tensor(data[0, :, :, :], dtype=torch.float32).unsqueeze(0)
-        md = torch.tensor(data[1, :, :, :], dtype=torch.float32).unsqueeze(0)
-        data = (fa, md)
         return data, label
 
-    def _load_npz(self, idx):
+    def _load_dti(self, idx, modality):
         """
-        加载 .npz 文件并返回数据
+        加载 nii.gz 文件并返回数据
         :param idx: 样本索引
-        :return: 数据数组（形状为 (channels, depth, height, width)）
+        :return: 数据数组（形状为 182x218x182）
         """
+        import nibabel as nib
+        import glob
+        
         # 构建文件路径模式
-        file_pattern = f"{self.subject_id[idx]}_FA_MD_1mm_float16.npz"
-        file_path = os.path.join(
+        file_pattern = f"{self.subject_id[idx]}_{modality}*1mm.nii.gz"
+        search_path = os.path.join(
             self.root_dir,
             self.event_id[idx],
-            "DTI_Results_GOOD",
+            "DTI_Results_GOOD", 
             str(self.subject_id[idx]),
             "standard_space",
             file_pattern
         )
-
-        # 检查文件是否存在
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
-
-        # 加载 .npz 文件
-        npz_data = np.load(file_path)
-
-        # 检查数据键是否存在
-        if "arr_0" not in npz_data:
-            raise KeyError(f"Key 'data' not found in .npz file: {file_path}")
-
-        return npz_data["arr_0"]
+        
+        # 查找匹配的文件
+        matched_files = glob.glob(search_path)
+        if not matched_files:
+            raise FileNotFoundError(f"找不到匹配的文件: {search_path}")
+            
+        # 加载第一个匹配的nii.gz文件
+        nii_img = nib.load(matched_files[0])
+        data = nii_img.get_fdata()
+        
+        # 确保数据形状为182x218x182
+        if data.shape != (182, 218, 182):
+            raise ValueError(f"数据形状不正确,期望(182,218,182),实际{data.shape}")
+        # 在第一个维度添加channel维度
+        data = data[None, ...]  # 等同于 data.reshape(1, 182, 218, 182)
+        return data
+    
+    def _load_mri(self, idx):
+        """
+        加载 nii.gz 文件并返回数据
+        :param idx: 样本索引
+        :return: 数据数组（形状为 91x109x91）
+        """
+        import nibabel as nib
+        import glob
+        
+        # 构建文件路径模式
+        file_pattern = f"co_{self.subject_id[idx]}*.nii.gz"
+        search_path = os.path.join(
+            self.root_dir,
+            self.event_id[idx],
+            "DTI_Results_GOOD", 
+            str(self.subject_id[idx]),
+            "T1",
+            file_pattern
+        )
+        
+        # 查找匹配的文件
+        matched_files = glob.glob(search_path)
+        if not matched_files:
+            raise FileNotFoundError(f"找不到匹配的文件: {search_path}")
+            
+        # 加载第一个匹配的nii.gz文件
+        nii_img = nib.load(matched_files[0])
+        data = nii_img.get_fdata()
+        
+        # 确保数据形状为91x109x91
+        if data.shape != (91, 109, 91):
+            raise ValueError(f"数据形状不正确,期望(91,109,91),实际{data.shape}")
+        data = data[None, ...]  # 等同于 data.reshape(1, 91, 109, 91)
+        return data

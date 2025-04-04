@@ -51,9 +51,11 @@ def eval_model(model, val_loader, device, calculate_metrics, epoch, logging):
 
     with torch.no_grad():
         for data, labels in tqdm(val_loader):
-            fa_data, md_data = data
+            fa_data, mri_data = data
+            fa_data = fa_data.to(torch.float32).to(device)
+            mri_data = mri_data.to(torch.float32).to(device)
             labels = labels.to(device)
-            fa_logit, fa_map, fa_emb, md_logit, md_map, md_emb, out_logit = model(fa_data, md_data)
+            fa_logit, fa_map, fa_emb, mri_logit, mri_map, mri_emb, out_logit = model(fa_data, mri_data)
             preds = torch.argmax(out_logit, dim=1)
             probs = torch.nn.functional.softmax(out_logit, dim=1)
             all_labels.extend(labels.cpu().numpy())

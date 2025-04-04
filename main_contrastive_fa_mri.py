@@ -1,41 +1,40 @@
-# 1.根据csv文件按照固定seed划分成11份。有一份作为测试集
-# 2.总共10份作为节点，测试增量过程的模型能力（在测试集上的验证），遗忘程度（使用当前时间节点前所进入训练的数据）
-# 3.对上述过程进行五折交叉验证。
 import argparse
 import torch
 import time
 import os
 import numpy as np
 import logging
-from data import GraphDataset
+from data import VoxelDataset
 from collections import Counter
 from torch.utils.data import Subset
 from torch.optim.lr_scheduler import StepLR
-from torch_geometric.loader import DataLoader
+from torch.utils.data import DataLoader
 from torch.nn import DataParallel
 from models import create_model
 from statistics import mean, stdev
 from utils import rename_log_file, log_confusion_matrix, log_fold_results
-from utils.eval import save_best_model, calculate_metrics, graph_eval_model
+from utils.eval import save_best_model, calculate_metrics, eval_model
 from utils.utils import set_seed
-from utils.train import graph_train_epoch
+from utils.train import train_contrastive_epoch
 from sklearn.model_selection import KFold
-
+from torch.utils.data import Sampler
+import random
+from utils.data_split import split_by_patno, print_split_info
 def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
     parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
-    parser.add_argument('--model_name', type=str, default='graph_model_gcn', help='Name of the model to use.')
+    parser.add_argument('--model_name', type=str, default='contrastive_model2', help='Name of the model to use.')
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal'])
-    parser.add_argument('--bs', type=int, default=32, help='I3D C3D cuda out of memory.')
+    parser.add_argument('--bs', type=int, default=4, help='I3D C3D cuda out of memory.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
     parser.add_argument('--debug', type=int, choices=[0, 1], default=0, help='Set 1 for debug mode, 0 for normal mode.')
     parser.add_argument('--pick_metric_name', type=str, default='accuracy', choices=['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1', 'precision', 'recall', 'specificity'], help='Metric used for evaluation.')
     parser.add_argument('--val_start', type=int, default=30, help='Epoch to start validation.')
     parser.add_argument('--val_interval', type=int, default=1, help='How often to perform validation.')
     parser.add_argument('--early_stop_start', type=int, default=30, help='Epoch to start monitoring for early stopping.')
-    parser.add_argument('--patience', type=int, default=10, help='Number of epochs to wait before stopping if no improvement.')
+    parser.add_argument('--patience', type=int, default=5, help='Number of epochs to wait before stopping if no improvement.')
     args = parser.parse_args()
     log_dir = f'./logs/{args.task}'
     os.makedirs(log_dir, exist_ok=True)
@@ -65,21 +64,22 @@ def main():
     args, device, log_file, timestamp = setup_training_environment()
     args.debug = bool(args.debug)
     csv_file = 'data/data.csv'
-    dataset = GraphDataset(csv_file, args)
+    dataset = VoxelDataset(csv_file, args)
 
     all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
                                              'precision', 'recall', 'specificity']}
-
     k_folds = 5
-    kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
     indices = np.arange(len(dataset))
 
-    for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
+    for fold, (train_indices, val_indices) in enumerate(split_by_patno(dataset, indices, k_folds)):
+    # kfold = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
+    # for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
         train_subset = Subset(dataset, train_indices)
         val_subset = Subset(dataset, val_indices)
 
-        train_labels = dataset.labels[train_indices]
-        val_labels = dataset.labels[val_indices]
+        # 将标签转换为numpy数组
+        train_labels = np.array([dataset.labels[i] for i in train_indices])
+        val_labels = np.array([dataset.labels[i] for i in val_indices])
 
         train_counter = Counter(train_labels)
         val_counter = Counter(val_labels)
@@ -96,10 +96,47 @@ def main():
         for row in table:
             logging.info(row)
 
-        train_loader = DataLoader(train_subset, batch_size=args.bs, shuffle=True)
+        # 创建一个自定义的sampler来确保每个batch中都有不同类别的样本
+        class BalancedBatchSampler(Sampler):
+            def __init__(self, labels, batch_size):
+                self.labels = labels
+                self.batch_size = batch_size
+                self.label_to_indices = {}
+                for idx, label in enumerate(labels):
+                    if label not in self.label_to_indices:
+                        self.label_to_indices[label] = []
+                    self.label_to_indices[label].append(idx)
+                
+            def __iter__(self):
+                indices = []
+                # 确保每个batch中都有不同类别的样本
+                for _ in range(len(self.labels) // self.batch_size):
+                    batch_indices = []
+                    # 从每个类别中随机选择样本
+                    for label in self.label_to_indices:
+                        if len(self.label_to_indices[label]) > 0:
+                            batch_indices.extend(random.sample(self.label_to_indices[label], 
+                                                             min(len(self.label_to_indices[label]), 
+                                                                 self.batch_size // len(self.label_to_indices))))
+                    # 如果batch_indices不足batch_size，从所有样本中随机补充
+                    while len(batch_indices) < self.batch_size:
+                        batch_indices.append(random.choice(list(range(len(self.labels)))))
+                    random.shuffle(batch_indices)
+                    indices.extend(batch_indices)
+                return iter(indices)
+            
+            def __len__(self):
+                return len(self.labels)
+        
+
+        # 使用自定义的sampler创建DataLoader
+        train_sampler = BalancedBatchSampler(train_labels, args.bs)
+        
+        train_loader = DataLoader(train_subset, batch_size=args.bs, sampler=train_sampler)
         val_loader = DataLoader(val_subset, batch_size=args.bs, shuffle=False)
 
         model = create_model(args.model_name)
+        model = model.float()
         model = DataParallel(model).to(device)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -140,9 +177,9 @@ def main():
         result_probs = None
         max_epochs = args.epochs
         for epoch in range(max_epochs):
-            graph_train_epoch(model, train_loader, optimizer, scheduler, device, epoch)
+            train_contrastive_epoch(model, train_loader, optimizer, scheduler, device, epoch)
             if (epoch + 1) % val_interval == 0 and (epoch + 1) >= val_start:
-                avg_metrics, cm, all_labels, all_preds, all_probs = graph_eval_model(model, val_loader, device, calculate_metrics, epoch, logging)
+                avg_metrics, cm, all_labels, all_preds, all_probs = eval_model(model, val_loader, device, calculate_metrics, epoch, logging)
                 eval_metrics = avg_metrics
                 current_val_metric = eval_metrics['accuracy']
                 if result_cm is None:
