@@ -252,8 +252,8 @@ class ContrastiveTrainer(BaseTrainer):
             labels = labels.to(self.device)
 
             fa_logit, fa_map, fa_emb, mri_logit, mri_map, mri_emb, out_logit = self.model(fa_data, mri_data)
-            print(mri_emb)
-            print(out_logit)
+            # print(mri_emb)
+            # print(out_logit)
             step += 1
             
             # 1.构建正负样本对
