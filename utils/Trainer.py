@@ -1,8 +1,11 @@
-from utils.utils import rename_log_file
 from utils.eval import calculate_metrics
+from collections import Counter
 from torch.utils.data import Subset
 from torch.utils.data import DataLoader
+from utils import rename_log_file, log_confusion_matrix, log_fold_results
+from sklearn.metrics import confusion_matrix, roc_auc_score
 from torch.nn import DataParallel
+from tqdm import tqdm
 from models import create_model
 from statistics import mean, stdev
 import torch
@@ -12,15 +15,16 @@ import numpy as np
 import random
 from sklearn.model_selection import KFold
 from data.BalancedSampler import BalancedSampler
+from torch.optim.lr_scheduler import StepLR
+import logging
 
 class BaseTrainer:
-    def __init__(self, dataset, optimizer, scheduler, args, timestamp, seed=42):
+    def __init__(self, dataset, args, timestamp, seed=42):
         self.dataset = dataset
-        self.optimizer = optimizer
-        self.scheduler = scheduler
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.args = args
         self.seed = seed
-        self.save_model_path = "./save_models"
+        self.save_model_path = "./saved_models"
         self.timestamp = timestamp
 
     def set_seed(self):
@@ -34,16 +38,12 @@ class BaseTrainer:
         torch.backends.cudnn.benchmark = False
 
     def load_data(self, train_indices, val_indices):
-        # 加载数据集
-        # 接受start_training()传入的indices,记录数据分布指标
-        # 然后根据indices划分数据集
-        # 返回train_loader, val_loader
         # 如果是图结构数据，则需要重写，因为图结构数据需要用dataloader的collate_fn来处理
-        train_subset = Subset(dataset, train_indices)
-        val_subset = Subset(dataset, val_indices)
+        train_subset = Subset(self.dataset, train_indices)
+        val_subset = Subset(self.dataset, val_indices)
 
-        train_labels = dataset.labels[train_indices]
-        val_labels = dataset.labels[val_indices]
+        train_labels = self.dataset.labels[train_indices].tolist()
+        val_labels = self.dataset.labels[val_indices].tolist()
 
         train_counter = Counter(train_labels)
         val_counter = Counter(val_labels)
@@ -61,22 +61,21 @@ class BaseTrainer:
             logging.info(row)
 
         # 实例化 balanced sampler
-        train_sampler = BalancedSampler(train_subset)
-
-        train_loader = DataLoader(train_subset, batch_size=args.bs, shuffle=True, sampler=train_sampler)
-        val_loader = DataLoader(val_subset, batch_size=args.bs, shuffle=False)
+        # train_sampler = BalancedSampler(train_subset.dataset)
+        train_loader = DataLoader(train_subset, batch_size=self.args.bs, shuffle=True)
+        val_loader = DataLoader(val_subset, batch_size=self.args.bs, shuffle=False)
         return train_loader, val_loader
 
 
-    def model_evaluate(self, data_loader):
+    def model_evaluate(self, epoch, data_loader):
         self.model.eval()
         all_labels = []
         all_preds = []
         all_probs = []
         with torch.no_grad():
             for data, labels in tqdm(data_loader):
-                data = data.to(self.device)
-                labels = labels.to(self.device)
+                # data = data.to(self.device)
+                # labels = labels.to(self.device)
                 out_logit = self.model_output(data)
                 preds = torch.argmax(out_logit, dim=1)
                 probs = torch.nn.functional.softmax(out_logit, dim=1)
@@ -119,16 +118,23 @@ class BaseTrainer:
         )
         return avg_metrics, cm, all_labels, all_preds, all_probs
 
-    def start_training(self):
-        all_metrics = []
+    def start_training(self, log_file):
+        all_metrics = {metric: [] for metric in ['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1',
+                                                 'precision', 'recall', 'specificity']}
         kfold = KFold(n_splits=self.args.k_folds, shuffle=True, random_state=self.seed)
-        indices = np.arange(len(dataset))
+        indices = np.arange(len(self.dataset))
         for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
-            print(f"Training fold {fold + 1}/{self.args.k_folds}")
+            logging.info(f"Training fold {fold + 1}/{self.args.k_folds}")
+
             self.model = create_model(self.args.model_name)
+            self.model = DataParallel(self.model).to(self.device)
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
+            self.scheduler = StepLR(self.optimizer, step_size=10, gamma=0.5)
+            
             train_loader, val_loader = self.load_data(train_indices, val_indices)
             fold_metrics = self.cross_validation(fold, train_loader, val_loader)
-            all_metrics.append(fold_metrics)
+            for metric, value in fold_metrics.items():
+                all_metrics[metric].append(value)
 
         result_message = ''
         for metric, values in all_metrics.items():
@@ -138,11 +144,10 @@ class BaseTrainer:
         avg_acc = mean(all_metrics['accuracy']) * 100
         logging.info(f"\n{result_message}")
         logging.shutdown()
-        rename_log_file(log_file, avg_acc, args.task, args.model_name, timestamp)
+        rename_log_file(log_file, avg_acc, self.args.task, self.args.model_name, self.timestamp)
 
 
     def cross_validation(self, fold, train_loader, val_loader):
-        # 进入每个epoch训练模型，评估模型，记录指标
         best_metrics = {
             'accuracy': 0,
             'balanced_accuracy': 0,
@@ -153,11 +158,10 @@ class BaseTrainer:
             'recall': 0,
             'specificity': 0,
         }
-        best_epoch = 0
         for epoch in range(self.args.epochs):
             self.train_epoch(epoch, train_loader)
             
-            if epoch > self.args.val_start and epoch % self.args.val_interval == 0:
+            if (epoch+1) >= self.args.val_start and (epoch+1) % self.args.val_interval == 0:
                 metrics, cm, all_labels, all_preds, all_probs = self.model_evaluate(epoch, val_loader)
                 
                 if metrics[self.args.pick_metric_name] > best_metrics[self.args.pick_metric_name]:
@@ -166,18 +170,13 @@ class BaseTrainer:
                     self.save_model(epoch, metrics, fold)
                     self.early_stop_counter = 0
                 else:
-                    # 如果当前验证指标没有提高，早停计数器增加
                     self.early_stop_counter += 1
 
-                # 如果早停计数器超过耐心次数，则提前停止
-                if self.early_stop_counter >= self.early_stop_patience:
+                if self.early_stop_counter >= self.args.patience:
                     print(f"Early stopping at epoch {epoch + 1}.")
                     break
-
-        # 如果已经达到最大epoch，保存最终模型
-        if epoch == self.args.epochs - 1:
-            print(f"Maximum epochs reached. Saving model at epoch {epoch + 1}.")
-            self.save_model(epoch, best_metrics, fold)
+        logging.info(f"Maximum epochs reached. Saving model at epoch {self.args.epochs}.")
+        self.save_model(self.args.epochs, best_metrics, fold)
 
         return best_metrics
 
@@ -209,22 +208,62 @@ class BaseTrainer:
 
 
 class ContrastiveTrainer(BaseTrainer):
-    def __init__(self, dataset, optimizer, scheduler, args, timestamp, seed=42):
-        super().__init__(dataset, optimizer, scheduler, args, timestamp, seed)
+    def __init__(self, dataset, args, timestamp, seed=42):
+        super().__init__(dataset, args, timestamp, seed)
 
     def model_output(self, data):
-        # 针对多任务学习模型的重写
-        pass
+        fa_data, mri_data = data
+        fa_data = fa_data.to(torch.float32).to(self.device)
+        mri_data = mri_data.to(torch.float32).to(self.device)
+        _, _, _, _, _, _, out_logit = self.model(fa_data, mri_data)
+        return out_logit
 
     def train_epoch(self, epoch, train_loader):
-        # 具体的训练过程和反向传播优化，并且记录损失，如果是多任务学习就需要重写记录损失的逻辑
-        raise NotImplementedError("train_epoch() should be implemented by subclass")
+        self.model.train()
+        classification_loss_total = 0
+        step = 0
+        loss_function = torch.nn.CrossEntropyLoss()
+
+        weights = {
+            'contrastive': 1,
+            'classification': 1,
+            'fa': 1,
+            'mri': 1,
+            'ssim': 1
+        }
+        for batch_idx, (data, labels) in tqdm(enumerate(train_loader), total=len(train_loader)):
+            self.optimizer.zero_grad()
+            fa_data, mri_data = data
+            fa_data = fa_data.to(torch.float32).to(self.device)
+            mri_data = mri_data.to(torch.float32).to(self.device)
+            labels = labels.to(self.device)
+
+            fa_logit, fa_map, fa_emb, mri_logit, mri_map, mri_emb, out_logit = self.model(fa_data, mri_data)
+            step += 1
+
+            classification_loss = loss_function(out_logit, labels)
+
+            total_loss = classification_loss
+            # 7. 反向传播 + 优化
+            total_loss.backward()
+            self.optimizer.step()
+
+            classification_loss_total += classification_loss.item()
+
+        avg_classification_loss = classification_loss_total / step
+        logging.info(
+            f"Epoch {epoch + 1} - "
+            f"Classification Loss (w={weights['classification']:.2f}): {avg_classification_loss:.4f}, "
+
+        )
+        self.scheduler.step()
+        return
 
 
 
 class GraphTrainer(BaseTrainer):
-    def __init__(self, dataset, optimizer, scheduler, args, timestamp, seed=42):
-        super().__init__(dataset, optimizer, scheduler, args, timestamp, seed)
+    def __init__(self, dataset, args, timestamp, seed=42):
+        super().__init__(dataset, args, timestamp, seed)
 
     def load_data(self, train_indices, val_indices):
         # 针对图数据集的加载数据步骤

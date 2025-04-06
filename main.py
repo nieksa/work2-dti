@@ -2,19 +2,8 @@ import argparse
 import torch
 import time
 import os
-import numpy as np
 import logging
 from data import ContrastiveDataset
-from collections import Counter
-from torch.utils.data import Subset
-from torch.optim.lr_scheduler import StepLR
-from torch.utils.data import DataLoader
-from torch.nn import DataParallel
-from models import create_model
-from statistics import mean, stdev
-from utils import rename_log_file, log_confusion_matrix, log_fold_results
-
-from sklearn.model_selection import KFold
 from utils.Trainer import ContrastiveTrainer, GraphTrainer
 
 def setup_training_environment():
@@ -25,12 +14,13 @@ def setup_training_environment():
 
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal', 'NCvsProdromalvsPD'])
 
-    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
+    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs to train.')
     parser.add_argument('--bs', type=int, default=4, help='batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
+    parser.add_argument('--k_folds', type=int, default=2)
 
-    parser.add_argument('--val_start', type=int, default=30, help='Epoch to start validation.')
+    parser.add_argument('--val_start', type=int, default=1, help='Epoch to start validation.')
     parser.add_argument('--val_interval', type=int, default=1, help='How often to perform validation.')
 
     parser.add_argument('--early_stop_start', type=int, default=30, help='Epoch to start monitoring for early stopping.')
@@ -67,16 +57,16 @@ def main():
     seed = 42
     args, device, log_file, timestamp = setup_training_environment()
     args.debug = bool(args.debug)
-    csv_file = 'data/data.csv'
+    csv_file = 'data/data2.csv'
 
     if args.work_type == "Contrastive":
         dataset = ContrastiveDataset(csv_file, args)
-        trainer = ContrastiveTrainer(dataset, optimizer, scheduler, args, timestamp, seed=seed)
-        trainer.start_training()
-    elif args.work_type == "Graph":
-        dataset = GraphDataset(csv_file, args)
-        trainer = GraphTrainer(dataset, optimizer, scheduler, args, timestamp, seed=seed)
-        trainer.start_training()
+        trainer = ContrastiveTrainer(dataset, args, timestamp, seed=seed)
+        trainer.start_training(log_file)
+    # elif args.work_type == "Graph":
+    #     dataset = GraphDataset(csv_file, args)
+    #     trainer = GraphTrainer(dataset, args, timestamp, seed=seed)
+    #     trainer.start_training()
 
 if __name__ == "__main__":
     main()

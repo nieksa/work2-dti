@@ -2,6 +2,8 @@
 # 我希望是先评估dataset里面各labels的分布，然后尽可能通过权重来对少数类进行过适当过采样，确保在dataloader中每个batch中各类样本的分布尽可能均匀
 from torch.utils.data.sampler import Sampler
 import numpy as np
+import random
+import torch
 
 class BalancedSampler(Sampler):
     def __init__(self, dataset):

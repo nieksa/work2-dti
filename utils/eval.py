@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.metrics import confusion_matrix, roc_auc_score
 import logging
 from tabulate import tabulate
 def log_confusion_matrix(cm):
