@@ -1,8 +1,9 @@
 import logging
 from tqdm import tqdm
-from contrastive_utils import create_positive_negative_pairs, contrastive_loss, compute_contrastive_ssim_loss, compute_contrastive_heatmap_ssim_loss
+from utils.contrastive_utils import create_positive_negative_pairs, contrastive_loss, \
+    compute_contrastive_heatmap_ssim_loss
 import torch
-import math
+
 
 def calculate_stage_weights(epoch, total_epochs=100):
     """

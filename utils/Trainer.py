@@ -250,15 +250,40 @@ class ContrastiveTrainer(BaseTrainer):
 
             fa_logit, fa_map, fa_emb, mri_logit, mri_map, mri_emb, out_logit = self.model(fa_data, mri_data)
             step += 1
+            
+            # 1.构建正负样本对
+            from utils.contrastive_utils import create_positive_negative_pairs
+            pos_pairs, neg_pairs = create_positive_negative_pairs(labels)
 
+            # 2.使用三元组损失计算DTI数据的对比损失，因为DTI数据是各向异性的。
+            from utils.contrastive_utils import triplet_loss
+            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=3)
+            # dti_loss = triplet_loss(fa_emb, pos_pairs, neg_pairs)
+
+            # 3.使用InfoNCE损失计算MRI数据的对比损失，因为MRI数据是各向同性的。
+            from utils.contrastive_utils import supervised_infonce_loss
+            nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.07,
+                                               hard_neg=True, topk=5, pos_threshold=0.8)
+
+            # 4.使用交叉熵损失计算分类损失
             classification_loss = loss_function(out_logit, labels)
 
-            total_loss = classification_loss
+            # 5.使用跨模态对齐损失计算fa_emb和mri_emb之间的对齐损失
+            from utils.contrastive_utils import cross_modal_alignment_loss
+            cross_modal_loss = cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True)
+
+            # 6.使用ssim计算fa_map和mri_map之间的相似度损失，这个的医学支撑是脑部病变发生在相同的ROI区域，所以热图关注应该是在同一个地方
+            # from utils.contrastive_utils import ssim_loss
+            # ssim_loss = ssim_loss(fa_map, mri_map, pos_pairs, neg_pairs)
+            # 这个的目的是为了在浅层网络中找到注意力热图相同的位置，因为同一个人的脑袋病变位置肯定是一样的，尽管是不同模态，反应不同指标，但是病变区域应该一致，所以这个是最大化相似
+
+            total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss
             # 7. 反向传播 + 优化
             total_loss.backward()
             self.optimizer.step()
 
             classification_loss_total += classification_loss.item()
+
 
         avg_classification_loss = classification_loss_total / step
         logging.info(
