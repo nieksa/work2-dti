@@ -15,12 +15,6 @@ def rename_log_file(log_file, avg_acc, task, model_name, timestamp):
     os.rename(log_file, new_logfilename)
     return new_logfilename
 
-def set_seed(seed):
-    random.seed(seed)  # Python 随机种子
-    np.random.seed(seed)  # NumPy 随机种子
-    torch.manual_seed(seed)  # PyTorch 随机种子
-    torch.cuda.manual_seed(seed)  # CUDA 随机种子
-    torch.cuda.manual_seed_all(seed)  # 如果使用多 GPU，设置所有 GPU 的随机种子
 
 def plot_confusion_matrix(labels, preds, class_names, model_name, save_dir):
     """

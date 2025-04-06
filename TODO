@@ -1,0 +1,4 @@
+1.重构dataset代码，写一个BaseDataset基类，加载csv文件和任务类型，GraphDataset和ContrastiveDataset都是重写_getitem方法来加载不同数据
+2.重构trainer代码，写一个BaseTrainer基类，加载模型，数据集，优化器，scheduler，训练，评估，测试(因为不同模型的输出不同，所以需要的损失函数接受输入不同)
+3.BaseTrainer中实现的方法包括训练，评估，保存模型。
+
