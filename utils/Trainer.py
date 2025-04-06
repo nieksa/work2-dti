@@ -126,7 +126,6 @@ class BaseTrainer:
         for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
             logging.info(f"Training fold {fold + 1}/{self.args.k_folds}")
             train_loader, val_loader = self.load_data(train_indices, val_indices)
-            break
             self.model = create_model(self.args.model_name)
             self.model = DataParallel(self.model).to(self.device)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
