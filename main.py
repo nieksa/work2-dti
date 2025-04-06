@@ -17,7 +17,7 @@ def setup_training_environment():
     parser.add_argument('--epochs', type=int, default=1, help='Number of epochs to train.')
     parser.add_argument('--bs', type=int, default=4, help='batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
-    parser.add_argument('--k_folds', type=int, default=3)
+    parser.add_argument('--k_folds', type=int, default=5)
 
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
 
@@ -56,7 +56,7 @@ def main():
     seed = 42
     args, device, log_file, timestamp = setup_training_environment()
     args.debug = bool(args.debug)
-    csv_file = 'data/data2.csv'
+    csv_file = 'data/data.csv'
 
     if args.work_type == "Contrastive":
         dataset = ContrastiveDataset(csv_file, args)

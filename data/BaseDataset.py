@@ -36,29 +36,22 @@ class BaseDataset(Dataset):
         # self.clinical_scores = 从filtered_data中获取指定指标的值，有些空的列就用0代替
 
     def _filter_samples(self):
-        # 创建原始数据的拷贝，避免修改原数据
         data = self.csv_file.copy()
         label_mapping = {
-            'NCvsPD': {1: 0, 2: 1},
-            'NCvsProdromal': {1: 0, 4: 1},
-            'ProdromalvsPD': {4: 0, 2: 1},
-            'NCvsProdromalvsPD': {1: 0, 4: 1, 2: 2}
+            'NCvsPD': {2: 0, 1: 1},
+            'NCvsProdromal': {2: 0, 4: 1},
+            'ProdromalvsPD': {4: 0, 1: 1},
+            'NCvsProdromalvsPD': {2: 0, 4: 1, 1: 2}
         }
+        # 1 - 392 - PD
+        # 2 - 121 - NC
+        # 4 - 123 - Prodromal
         if self.task not in label_mapping:
             raise ValueError(f"Unsupported task: {self.task}")
         task_mapping = label_mapping[self.task]
-        if self.task == 'NCvsPD':
-            data = data[data['APPRDX'].isin([1, 2])]
-            data['APPRDX'] = data['APPRDX'].map(task_mapping)
-        elif self.task == 'NCvsProdromal':
-            data = data[data['APPRDX'].isin([1, 4])]
-            data['APPRDX'] = data['APPRDX'].map(task_mapping)
-        elif self.task == 'ProdromalvsPD':
-            data = data[data['APPRDX'].isin([4, 2])]
-            data['APPRDX'] = data['APPRDX'].map(task_mapping)
-        elif self.task == 'NCvsProdromalvsPD':
-            data = data[data['APPRDX'].isin([1, 2, 4])]
-            data['APPRDX'] = data['APPRDX'].map(task_mapping)
+        valid_labels = list(task_mapping.keys())
+        data = data[data['APPRDX'].isin(valid_labels)]
+        data['APPRDX'] = data['APPRDX'].map(task_mapping)
         return data
 
     def __len__(self):

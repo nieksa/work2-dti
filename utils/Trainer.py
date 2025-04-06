@@ -125,14 +125,15 @@ class BaseTrainer:
         indices = np.arange(len(self.dataset))
         for fold, (train_indices, val_indices) in enumerate(kfold.split(indices)):
             logging.info(f"Training fold {fold + 1}/{self.args.k_folds}")
-
+            train_loader, val_loader = self.load_data(train_indices, val_indices)
+            break
             self.model = create_model(self.args.model_name)
             self.model = DataParallel(self.model).to(self.device)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
             # self.scheduler = StepLR(self.optimizer, step_size=10, gamma=0.5)
             self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.args.epochs)
             
-            train_loader, val_loader = self.load_data(train_indices, val_indices)
+
             fold_metrics = self.cross_validation(fold, train_loader, val_loader)
             for metric, value in fold_metrics.items():
                 all_metrics[metric].append(value)
@@ -282,6 +283,8 @@ class ContrastiveTrainer(BaseTrainer):
             ssim_model = SSIM3D(window_size=5, channels=1, sigma=1.5)
             ssim_model = DataParallel(ssim_model).to(self.device)
             ssim_loss = ssim_model(fa_map, mri_map)
+            ssim_loss = ssim_loss.mean()
+            ssim_loss = ssim_loss.detach()
             print(f"ssim_loss:{ssim_loss}")
 
             total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss + ssim_loss
