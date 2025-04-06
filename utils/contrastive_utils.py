@@ -9,40 +9,25 @@ import numpy as np
 class SSIM3D(nn.Module):
     def __init__(self, window_size=5, channels=1, sigma=1.5):
         super().__init__()
-        # 初始化3D高斯核
-        if not isinstance(window_size, int):
-            raise ValueError("window_size must be an integer")
-
-        self.window = self._gaussian_kernel3d(window_size, sigma, channels)
-
-        # 动态注意力网络
-        self.attention_net = nn.Sequential(
-            nn.Conv3d(2, 16, kernel_size=3, dilation=2, padding=2),
-            nn.ReLU(),
-            nn.Conv3d(16, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-
-        # 对DTI_FA数据下采样与MRI数据匹配
-        # self.downsample = nn.Conv3d(in_channels=128, out_channels=128, kernel_size=3, stride=2, padding=1)
+        # 固定高斯核（无参数注册）
+        self.register_buffer('window', self._gaussian_kernel3d(window_size, sigma, channels))
 
     def _gaussian_kernel3d(self, size, sigma, channels):
+        # 保持原有高斯核生成逻辑（数学运算固定）
         coords = torch.arange(size).float() - (size - 1) / 2.0
         grid = torch.meshgrid(coords, coords, coords, indexing='ij')
-        kernel = torch.exp(-(grid[0]**2 + grid[1]**2 + grid[2]**2) / (2 * sigma**2))
+        kernel = torch.exp(-(grid[0]**2 + grid[1]**2 + grid[2]**2 ) / (2 * sigma**2))
         kernel = kernel / kernel.sum()
         return kernel.view(1, 1, size, size, size).repeat(channels, 1, 1, 1, 1)
 
+    @torch.no_grad()
     def forward(self, fa_map, mri_map):
-        # 基础SSIM计算
+        # 移除所有动态计算模块
+        window = self.window.to(fa_map.device)
+
+        # 基础SSIM计算（与传统方法完全一致）
         C1 = (0.01 * 1.0)**2
         C2 = (0.03 * 1.0)**2
-
-        # 下采样使用那种方式呢？
-        # fa_map = self.downsample(fa_map)
-        fa_map = F.interpolate(fa_map, size=(12, 14, 12), mode='trilinear', align_corners=False)
-
-        window = self.window.to(fa_map.device)
 
         mu_fa = F.conv3d(fa_map, window, padding=2, groups=1)
         mu_mri = F.conv3d(mri_map, window, padding=2, groups=1)
@@ -54,13 +39,7 @@ class SSIM3D(nn.Module):
         ssim_map = ((2 * mu_fa * mu_mri + C1) * (2 * sigma_famri + C2)) / \
                    ((mu_fa**2 + mu_mri**2 + C1) * (sigma_fa_sq + sigma_mri_sq + C2))
 
-        # 动态注意力生成
-        attention_input = torch.cat([fa_map, mri_map], dim=1)
-        attention_mask = self.attention_net(attention_input)
-
-        # 注意力加权
-        weighted_ssim = ssim_map * attention_mask
-        return 1 - weighted_ssim.mean()
+        return 1 - ssim_map.mean()
 
 
 def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True):
@@ -284,8 +263,10 @@ if __name__ == "__main__":
     print("正样本对:", pos_pairs)
     print("负样本对:", neg_pairs)
 
-    fa_map = torch.randn(2, 128, 24, 28, 24)
-    mri_map = torch.randn(2, 128, 12, 14, 12)
+    fa_map = torch.randn(2, 1, 12, 14, 12)
+    mri_map = torch.randn(2, 1, 12, 14, 12)
     model = SSIM3D(window_size=5, channels=1, sigma=1.5)
     ssim_loss = model(fa_map, mri_map)
     print("SSIM:", ssim_loss)
+
+    print("可训练参数数量:", sum(p.numel() for p in model.parameters()))

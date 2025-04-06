@@ -280,6 +280,7 @@ class ContrastiveTrainer(BaseTrainer):
             # 6.使用ssim计算fa_map和mri_map之间的相似度损失，这个的医学支撑是脑部病变发生在相同的ROI区域，所以热图关注应该是在同一个地方
             from utils.contrastive_utils import SSIM3D
             ssim_model = SSIM3D(window_size=5, channels=1, sigma=1.5)
+            ssim_model.to(self.device)
             ssim_loss = ssim_model(fa_map, mri_map)
             print(f"ssim_loss:{ssim_loss}")
 
