@@ -1,6 +1,4 @@
 # 继承BaseDataset，重写_getitem方法，加载数据
-import nibabel as nib
-import glob
 from data.BaseDataset import BaseDataset
 
 class ContrastiveDataset(BaseDataset):

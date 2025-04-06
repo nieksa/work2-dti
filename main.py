@@ -10,7 +10,7 @@ def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
     parser.add_argument('--work_type', type=str, default="Contrastive", choices=['Contrastive', 'Graph'])
-    parser.add_argument('--model_name', type=str, default='contrastive_model1', help='Name of the model to use.')
+    parser.add_argument('--model_name', type=str, default='contrastive_model2', help='Name of the model to use.')
 
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal', 'NCvsProdromalvsPD'])
 

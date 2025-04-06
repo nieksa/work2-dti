@@ -62,7 +62,7 @@ class BaseDataset(Dataset):
         return data
 
     def __len__(self):
-        return len(self.csv_file)
+        return len(self.labels)
         
     def _shuffle_data(self):
         # 打乱顺序，避免加载的时候同一类标签连续出现在一个batch中

@@ -1,7 +1,7 @@
 import logging
 from tqdm import tqdm
 from utils.contrastive_utils import create_positive_negative_pairs, contrastive_loss, \
-    compute_contrastive_heatmap_ssim_loss
+    SSIM3D
 import torch
 
 

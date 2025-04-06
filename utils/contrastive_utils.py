@@ -6,32 +6,61 @@ import torch.nn.functional as F
 import numpy as np
 
 
-class MedicalCrossModalLoss(nn.Module):
-    """
-    这个怎么理解，可以用在ssim里面吗？
-    """
-    def __init__(self, tau=0.07, alpha=0.3):
+class SSIM3D(nn.Module):
+    def __init__(self, window_size=5, channels=1, sigma=1.5):
         super().__init__()
-        self.tau = tau
-        self.alpha = alpha  # ROI损失权重
+        # 初始化3D高斯核
+        if not isinstance(window_size, int):
+            raise ValueError("window_size must be an integer")
 
-    def forward(self, fa_emb, mri_emb, roi_attn):
-        """
-        :param roi_attn: ROI注意力图 [B, H, W]（参考网页4）
-        """
-        # 全局对齐损失
-        global_loss = cross_modal_alignment_loss(fa_emb, mri_emb, self.tau)
+        self.window = self._gaussian_kernel3d(window_size, sigma, channels)
 
-        # ROI感知对齐
-        # 1. ROI区域特征池化
-        fa_roi = (roi_attn.unsqueeze(1) * fa_emb).sum(dim=(2, 3))  # [B,D]
-        mri_roi = (roi_attn.unsqueeze(1) * mri_emb).sum(dim=(2, 3))
+        # 动态注意力网络
+        self.attention_net = nn.Sequential(
+            nn.Conv3d(2, 16, kernel_size=3, dilation=2, padding=2),
+            nn.ReLU(),
+            nn.Conv3d(16, 1, kernel_size=1),
+            nn.Sigmoid()
+        )
 
-        # 2. 局部对比损失
-        roi_sim = F.cosine_similarity(fa_roi, mri_roi, dim=1)
-        roi_loss = -torch.log(torch.exp(roi_sim / self.tau) / torch.exp(roi_sim / self.tau).sum())
+        # 对DTI_FA数据下采样与MRI数据匹配
+        # self.downsample = nn.Conv3d(in_channels=128, out_channels=128, kernel_size=3, stride=2, padding=1)
 
-        return global_loss + self.alpha * roi_loss
+    def _gaussian_kernel3d(self, size, sigma, channels):
+        coords = torch.arange(size).float() - (size - 1) / 2.0
+        grid = torch.meshgrid(coords, coords, coords, indexing='ij')
+        kernel = torch.exp(-(grid[0]**2 + grid[1]**2 + grid[2]**2) / (2 * sigma**2))
+        kernel = kernel / kernel.sum()
+        return kernel.view(1, 1, size, size, size).repeat(channels, 1, 1, 1, 1)
+
+    def forward(self, fa_map, mri_map):
+        # 基础SSIM计算
+        C1 = (0.01 * 1.0)**2
+        C2 = (0.03 * 1.0)**2
+
+        # 下采样使用那种方式呢？
+        # fa_map = self.downsample(fa_map)
+        fa_map = F.interpolate(fa_map, size=(12, 14, 12), mode='trilinear', align_corners=False)
+
+        window = self.window.to(fa_map.device)
+
+        mu_fa = F.conv3d(fa_map, window, padding=2, groups=1)
+        mu_mri = F.conv3d(mri_map, window, padding=2, groups=1)
+
+        sigma_fa_sq = F.conv3d(fa_map * fa_map, window, padding=2, groups=1) - mu_fa**2
+        sigma_mri_sq = F.conv3d(mri_map * mri_map, window, padding=2, groups=1) - mu_mri**2
+        sigma_famri = F.conv3d(fa_map * mri_map, window, padding=2, groups=1) - mu_fa * mu_mri
+
+        ssim_map = ((2 * mu_fa * mu_mri + C1) * (2 * sigma_famri + C2)) / \
+                   ((mu_fa**2 + mu_mri**2 + C1) * (sigma_fa_sq + sigma_mri_sq + C2))
+
+        # 动态注意力生成
+        attention_input = torch.cat([fa_map, mri_map], dim=1)
+        attention_mask = self.attention_net(attention_input)
+
+        # 注意力加权
+        weighted_ssim = ssim_map * attention_mask
+        return 1 - weighted_ssim.mean()
 
 
 def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True):
@@ -55,61 +84,80 @@ def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True):
     if hard_neg:
         with torch.no_grad():
             neg_sim = sim_matrix.masked_fill(pos_mask, -np.inf)
-            hard_neg_indices = neg_sim.topk(k=5, dim=1).indices
+            hard_neg_indices = neg_sim.topk(k=1, dim=1).indices
             neg_mask = torch.zeros_like(sim_matrix).scatter(1, hard_neg_indices, 1).bool()
     else:
         neg_mask = ~pos_mask
 
     # 5. 双向对比损失计算
     exp_sim = torch.exp(sim_matrix / tau)
-    pos_term = exp_sim.diag()  # 分子：正样本相似度
-    denom_i2t = (exp_sim * neg_mask).sum(dim=1)  # 分母：负样本聚合
+
+    # 计算正样本相似度
+    pos_term = exp_sim.diag()  # 正样本相似度
+
+    # 计算负样本聚合
+    denom_i2t = (exp_sim * neg_mask).sum(dim=1)
     denom_t2i = (exp_sim * neg_mask).sum(dim=0)
 
+    # 添加平滑项，避免除零
+    epsilon = 1e-8  # 一个小常数，避免除零
+    denom_i2t = torch.max(denom_i2t, torch.tensor(epsilon, device=denom_i2t.device))
+    denom_t2i = torch.max(denom_t2i, torch.tensor(epsilon, device=denom_t2i.device))
+    pos_term = torch.max(pos_term, torch.tensor(epsilon, device=pos_term.device))
+
+    # 损失计算
     loss = -0.5 * (torch.log(pos_term / denom_i2t) + torch.log(pos_term / denom_t2i)).mean()
+
     return loss
 
 
 def supervised_infonce_loss(embeddings, labels, temperature=0.07,
                             hard_neg=True, topk=5, pos_threshold=0.8):
-    """
-    改进版：支持难样本挖掘的监督对比损失
-    :param hard_neg: 是否启用难负样本筛选（网页5/7）
-    :param topk: 每个锚点选择topk最相似负样本（网页4/7）
-    :param pos_threshold: 正样本相似度过滤阈值（网页6）
-    """
     # 特征归一化
     embeddings = F.normalize(embeddings, p=2, dim=1)
+
     # 计算余弦相似度矩阵
     sim_matrix = embeddings @ embeddings.T / temperature
+
     # 构建正样本掩码
     pos_mask = torch.eq(labels.view(-1, 1), labels.view(1, -1)).bool()
     pos_mask.fill_diagonal_(False)
+
     with torch.no_grad():
         neg_scores = sim_matrix.masked_fill(pos_mask, -np.inf)  # 排除正样本
+
         if hard_neg:
-            # 选择topk最相似负样本（网页4）
-            hard_neg_mask = neg_scores.topk(k=topk, dim=1).indices
+            num_neg = neg_scores.shape[1] - 1
+            k = min(topk, num_neg)
+            hard_neg_mask = neg_scores.topk(k=k, dim=1).indices
             neg_mask = torch.zeros_like(pos_mask).scatter(1, hard_neg_mask, 1).bool()
         else:
             # 传统负样本模式（全量负样本）
             neg_mask = ~pos_mask
 
-        # 过滤高相似度假正样本（网页6）
+        # 过滤高相似度假正样本
         high_sim = sim_matrix > pos_threshold
         pos_mask &= ~high_sim  # 排除相似度过高的潜在假正样本
 
-    # 对比损失计算（网页5/7）
+    # 对比损失计算
     exp_sim = torch.exp(sim_matrix)
 
-    # 分子：正样本相似度聚合（网页2）
+    # 分子：正样本相似度聚合
     pos_term = (sim_matrix * pos_mask).sum(dim=1)
 
-    # 分母：难负样本聚合（网页5）
+    # 分母：难负样本聚合
     neg_denominator = (exp_sim * neg_mask).sum(dim=1)
 
-    # 损失计算（网页5公式改造）
-    log_probs = -torch.log((exp_sim.diag() * pos_term) / (neg_denominator + 1e-8))
+    # 处理分母为零的情况，防止log(0)导致无穷大
+    eps = 1e-8  # 一个小常数来避免除以零
+    neg_denominator = torch.max(neg_denominator, torch.tensor(eps, device=neg_denominator.device))
+
+    # 处理分子为零的情况，防止log(0)导致无穷大
+    pos_term = torch.max(pos_term, torch.tensor(eps, device=pos_term.device))
+
+    # 损失计算
+    log_probs = -torch.log((exp_sim.diag() * pos_term) / (neg_denominator + eps))  # 加上一个小常数以避免除零
+
     valid_pos = pos_mask.sum(dim=1).clamp(min=1)
     loss = (log_probs / valid_pos.float()).mean()
 
@@ -117,7 +165,7 @@ def supervised_infonce_loss(embeddings, labels, temperature=0.07,
 
 
 def triplet_loss(fa_emb, labels, margin=1.0, topk=3):
-    dist_mat = torch.cdist(fa_emb, fa_emb, p=2)  # [B,B]
+    dist_mat = torch.cdist(fa_emb, fa_emb, p=2)  # [B, B]
 
     pos_mask = torch.eq(labels.view(-1, 1), labels.view(1, -1))  # 同类样本
     neg_mask = ~pos_mask
@@ -125,18 +173,22 @@ def triplet_loss(fa_emb, labels, margin=1.0, topk=3):
     losses = []
     for i in range(len(fa_emb)):
         pos_dist = dist_mat[i][pos_mask[i]]
-        pos_dist = pos_dist[pos_dist != 0]
-        hard_pos = pos_dist.argmax() if len(pos_dist) > 0 else 0
+        pos_dist = pos_dist[pos_dist != 0]  # 移除自身距离
+        hard_pos = pos_dist.argmax() if len(pos_dist) > 0 else None
 
         neg_dist = dist_mat[i][neg_mask[i]]
-        hard_neg = neg_dist.topk(topk, largest=False).indices
+        k = min(len(neg_dist), topk)
+        hard_neg = neg_dist.topk(k, largest=False).indices
 
-        for hp in hard_pos:
-            for hn in hard_neg:
-                loss = F.relu(dist_mat[i, hp] - dist_mat[i, hn] + margin)
-                losses.append(loss)
+        if hard_pos is not None:
+            # 确保 hard_pos 可迭代（它可能是标量）
+            for hp in hard_pos.unsqueeze(0) if hard_pos.dim() == 0 else hard_pos:
+                for hn in hard_neg:
+                    loss = F.relu(dist_mat[i, hp] - dist_mat[i, hn] + margin)
+                    losses.append(loss)
 
     return torch.mean(torch.stack(losses)) if losses else torch.tensor(0.0)
+
 
 
 # def triplet_loss(fa_emb, positive_pairs, negative_pairs, margin=1.0):
@@ -231,3 +283,9 @@ if __name__ == "__main__":
 
     print("正样本对:", pos_pairs)
     print("负样本对:", neg_pairs)
+
+    fa_map = torch.randn(2, 1, 24, 28, 24)
+    mri_map = torch.randn(2, 1, 12, 14, 12)
+    model = SSIM3D(window_size=5, channels=1, sigma=1.5)
+    ssim_loss = model(fa_map, mri_map)
+    print("SSIM:", ssim_loss)

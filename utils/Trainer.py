@@ -15,7 +15,7 @@ import numpy as np
 import random
 from sklearn.model_selection import KFold
 from data.BalancedSampler import BalancedSampler
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
 import logging
 
 class BaseTrainer:
@@ -129,7 +129,8 @@ class BaseTrainer:
             self.model = create_model(self.args.model_name)
             self.model = DataParallel(self.model).to(self.device)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
-            self.scheduler = StepLR(self.optimizer, step_size=10, gamma=0.5)
+            # self.scheduler = StepLR(self.optimizer, step_size=10, gamma=0.5)
+            self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.args.epochs)
             
             train_loader, val_loader = self.load_data(train_indices, val_indices)
             fold_metrics = self.cross_validation(fold, train_loader, val_loader)
@@ -231,16 +232,18 @@ class ContrastiveTrainer(BaseTrainer):
     def train_epoch(self, epoch, train_loader):
         self.model.train()
         classification_loss_total = 0
+        dti_loss_total = 0
+        nce_loss_total = 0
+        ssim_loss_total = 0
         step = 0
         loss_function = torch.nn.CrossEntropyLoss()
 
         weights = {
             'contrastive': 1,
             'classification': 1,
-            'fa': 1,
-            'mri': 1,
             'ssim': 1
         }
+
         for batch_idx, (data, labels) in tqdm(enumerate(train_loader), total=len(train_loader)):
             self.optimizer.zero_grad()
             fa_data, mri_data = data
@@ -249,51 +252,61 @@ class ContrastiveTrainer(BaseTrainer):
             labels = labels.to(self.device)
 
             fa_logit, fa_map, fa_emb, mri_logit, mri_map, mri_emb, out_logit = self.model(fa_data, mri_data)
+            print(mri_emb)
+            print(out_logit)
             step += 1
             
             # 1.构建正负样本对
-            from utils.contrastive_utils import create_positive_negative_pairs
-            pos_pairs, neg_pairs = create_positive_negative_pairs(labels)
+            # from utils.contrastive_utils import create_positive_negative_pairs
+            # pos_pairs, neg_pairs = create_positive_negative_pairs(labels)
 
             # 2.使用三元组损失计算DTI数据的对比损失，因为DTI数据是各向异性的。
             from utils.contrastive_utils import triplet_loss
-            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=3)
+            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=5)
             # dti_loss = triplet_loss(fa_emb, pos_pairs, neg_pairs)
-
+            print(f"dti loss:{dti_loss}")
             # 3.使用InfoNCE损失计算MRI数据的对比损失，因为MRI数据是各向同性的。
             from utils.contrastive_utils import supervised_infonce_loss
             nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.07,
                                                hard_neg=True, topk=5, pos_threshold=0.8)
-
+            print(f"nce_loss:{nce_loss}")
             # 4.使用交叉熵损失计算分类损失
             classification_loss = loss_function(out_logit, labels)
-
+            print(f"classification_loss:{classification_loss}")
             # 5.使用跨模态对齐损失计算fa_emb和mri_emb之间的对齐损失
             from utils.contrastive_utils import cross_modal_alignment_loss
             cross_modal_loss = cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True)
-
+            print(f"cross_modal_loss:{cross_modal_loss}")
             # 6.使用ssim计算fa_map和mri_map之间的相似度损失，这个的医学支撑是脑部病变发生在相同的ROI区域，所以热图关注应该是在同一个地方
-            # from utils.contrastive_utils import ssim_loss
-            # ssim_loss = ssim_loss(fa_map, mri_map, pos_pairs, neg_pairs)
-            # 这个的目的是为了在浅层网络中找到注意力热图相同的位置，因为同一个人的脑袋病变位置肯定是一样的，尽管是不同模态，反应不同指标，但是病变区域应该一致，所以这个是最大化相似
+            from utils.contrastive_utils import SSIM3D
+            ssim_model = SSIM3D(window_size=5, channels=1, sigma=1.5)
+            ssim_loss = ssim_model(fa_map, mri_map)
+            print(f"ssim_loss:{ssim_loss}")
 
-            total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss
+            total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss + ssim_loss
             # 7. 反向传播 + 优化
             total_loss.backward()
             self.optimizer.step()
 
             classification_loss_total += classification_loss.item()
-
+            dti_loss_total += dti_loss.item()
+            nce_loss_total += nce_loss.item()
+            ssim_loss_total += ssim_loss.item()
 
         avg_classification_loss = classification_loss_total / step
+        avg_dti_loss = dti_loss_total / step
+        avg_nce_loss = nce_loss_total / step
+        avg_ssim_loss = ssim_loss_total / step
+
         logging.info(
             f"Epoch {epoch + 1} - "
             f"Classification Loss (w={weights['classification']:.2f}): {avg_classification_loss:.4f}, "
-
+            f"DTI Loss (w={weights['contrastive']:.2f}): {avg_dti_loss:.4f}, "
+            f"MRI Loss (w={weights['contrastive']:.2f}): {avg_nce_loss:.4f}, "
+            f"SSIM Loss (w={weights['ssim']:.2f}): {avg_ssim_loss:.4f}, "
         )
         self.scheduler.step()
         return
-
 
 
 class GraphTrainer(BaseTrainer):
