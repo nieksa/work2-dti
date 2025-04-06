@@ -267,7 +267,7 @@ class ContrastiveTrainer(BaseTrainer):
             print(f"dti loss:{dti_loss}")
             # 3.使用InfoNCE损失计算MRI数据的对比损失，因为MRI数据是各向同性的。
             from utils.contrastive_utils import supervised_infonce_loss
-            nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.07,
+            nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.2,
                                                hard_neg=True, topk=5, pos_threshold=0.8)
             print(f"nce_loss:{nce_loss}")
             # 4.使用交叉熵损失计算分类损失

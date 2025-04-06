@@ -284,8 +284,8 @@ if __name__ == "__main__":
     print("正样本对:", pos_pairs)
     print("负样本对:", neg_pairs)
 
-    fa_map = torch.randn(2, 1, 24, 28, 24)
-    mri_map = torch.randn(2, 1, 12, 14, 12)
+    fa_map = torch.randn(2, 128, 24, 28, 24)
+    mri_map = torch.randn(2, 128, 12, 14, 12)
     model = SSIM3D(window_size=5, channels=1, sigma=1.5)
     ssim_loss = model(fa_map, mri_map)
     print("SSIM:", ssim_loss)
