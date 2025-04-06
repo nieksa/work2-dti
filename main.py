@@ -14,11 +14,12 @@ def setup_training_environment():
 
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal', 'NCvsProdromalvsPD'])
 
-    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs to train.')
+    parser.add_argument('--epochs', type=int, default=1, help='Number of epochs to train.')
     parser.add_argument('--bs', type=int, default=4, help='batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
+    parser.add_argument('--k_folds', type=int, default=3)
+
     parser.add_argument('--num_workers', type=int, default=4, help='Number of CPU workers.')
-    parser.add_argument('--k_folds', type=int, default=2)
 
     parser.add_argument('--val_start', type=int, default=1, help='Epoch to start validation.')
     parser.add_argument('--val_interval', type=int, default=1, help='How often to perform validation.')
@@ -26,10 +27,8 @@ def setup_training_environment():
     parser.add_argument('--early_stop_start', type=int, default=30, help='Epoch to start monitoring for early stopping.')
     parser.add_argument('--patience', type=int, default=10, help='Number of epochs to wait before stopping if no improvement.')
 
-    parser.add_argument('--debug', type=int, choices=[0, 1], default=0, help='Set 1 for debug mode, 0 for normal mode.')
-
     parser.add_argument('--pick_metric_name', type=str, default='accuracy', choices=['accuracy', 'balanced_accuracy', 'kappa', 'auc', 'f1', 'precision', 'recall', 'specificity'], help='Metric used for evaluation.')
-
+    parser.add_argument('--debug', type=int, choices=[0, 1], default=0, help='Set 1 for debug mode, 0 for normal mode.')
     args = parser.parse_args()
     log_dir = f'./logs/{args.task}'
     os.makedirs(log_dir, exist_ok=True)

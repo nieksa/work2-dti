@@ -158,6 +158,10 @@ class BaseTrainer:
             'recall': 0,
             'specificity': 0,
         }
+        best_cm = None
+        best_all_labels = None
+        best_all_preds = None
+        best_all_probs = None
         for epoch in range(self.args.epochs):
             self.train_epoch(epoch, train_loader)
             
@@ -166,16 +170,22 @@ class BaseTrainer:
                 
                 if metrics[self.args.pick_metric_name] > best_metrics[self.args.pick_metric_name]:
                     best_metrics = metrics
-                    best_epoch = epoch
+                    best_cm = cm
+                    best_all_labels = all_labels
+                    best_all_preds = all_preds
+                    best_all_probs = all_probs
                     self.save_model(epoch, metrics, fold)
                     self.early_stop_counter = 0
                 else:
                     self.early_stop_counter += 1
 
                 if self.early_stop_counter >= self.args.patience:
-                    print(f"Early stopping at epoch {epoch + 1}.")
+                    logging.info(f"Early stopping at epoch {epoch + 1}.")
                     break
         logging.info(f"Maximum epochs reached. Saving model at epoch {self.args.epochs}.")
+        log_confusion_matrix(best_cm)
+        log_fold_results(fold,best_all_labels,best_all_preds,best_all_probs)
+        
         self.save_model(self.args.epochs, best_metrics, fold)
 
         return best_metrics

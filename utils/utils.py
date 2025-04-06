@@ -1,12 +1,9 @@
 import os
 import logging
-import torch
-import random
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, roc_curve, auc, precision_recall_curve
 import json
-import numpy as np
 
 
 def rename_log_file(log_file, avg_acc, task, model_name, timestamp):
@@ -80,7 +77,7 @@ def log_fold_results(fold, labels, preds, probs):
 
     # 构建日志消息
     log_message = {
-        'fold': fold,
+        'fold': fold+1,
         'labels': labels_list,
         'preds': preds_list,
         'probs': probs_list
