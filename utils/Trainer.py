@@ -263,21 +263,21 @@ class ContrastiveTrainer(BaseTrainer):
 
             # 2.使用三元组损失计算DTI数据的对比损失，因为DTI数据是各向异性的。
             from utils.contrastive_utils import triplet_loss
-            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=5)
+            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=5, grad_clip_norm=1.0)
             # dti_loss = triplet_loss(fa_emb, pos_pairs, neg_pairs)
-            # print(f"dti loss:{dti_loss}")
+
             # 3.使用InfoNCE损失计算MRI数据的对比损失，因为MRI数据是各向同性的。
             from utils.contrastive_utils import supervised_infonce_loss
             nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.2,
-                                               hard_neg=True, topk=5, pos_threshold=0.8)
-            # print(f"nce_loss:{nce_loss}")
+                            hard_neg=True, topk=5, pos_threshold=0.8, grad_clip_norm=1.0)
+
             # 4.使用交叉熵损失计算分类损失
             classification_loss = loss_function(out_logit, labels)
-            # print(f"classification_loss:{classification_loss}")
+
             # 5.使用跨模态对齐损失计算fa_emb和mri_emb之间的对齐损失
             from utils.contrastive_utils import cross_modal_alignment_loss
-            cross_modal_loss = cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True)
-            # print(f"cross_modal_loss:{cross_modal_loss}")
+            cross_modal_loss = cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True, grad_clip_norm=1.0)
+
             # 6.使用ssim计算fa_map和mri_map之间的相似度损失，这个的医学支撑是脑部病变发生在相同的ROI区域，所以热图关注应该是在同一个地方
             from utils.contrastive_utils import SSIM3D
             ssim_model = SSIM3D(window_size=5, channels=1, sigma=1.5)

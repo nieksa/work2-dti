@@ -1,6 +1,7 @@
 import random
 import itertools
 import torch
+from torch.nn.utils import clip_grad_norm_
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -42,13 +43,7 @@ class SSIM3D(nn.Module):
         return 1 - ssim_map.mean()
 
 
-def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True):
-    """
-    改进版跨模态对齐损失，无需显式sample_ids
-    :param fa_emb/mri_emb: 已归一化的特征 [B, D]
-    :param tau: 温度系数，推荐0.05-0.1
-    :param hard_neg: 是否启用难负样本挖掘
-    """
+def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True, grad_clip_norm=1.0):
     # 1. 特征归一化
     fa_emb = F.normalize(fa_emb, p=2, dim=1)
     mri_emb = F.normalize(mri_emb, p=2, dim=1)
@@ -87,24 +82,26 @@ def cross_modal_alignment_loss(fa_emb, mri_emb, tau=0.07, hard_neg=True):
     # 损失计算
     loss = -0.5 * (torch.log(pos_term / denom_i2t) + torch.log(pos_term / denom_t2i)).mean()
 
+    # 梯度裁剪
+    if grad_clip_norm > 0:
+        clip_grad_norm_(fa_emb, grad_clip_norm)
+        clip_grad_norm_(mri_emb, grad_clip_norm)
+
     return loss
 
 
 def supervised_infonce_loss(embeddings, labels, temperature=0.07,
-                            hard_neg=True, topk=5, pos_threshold=0.8):
+                            hard_neg=True, topk=5, pos_threshold=0.8, grad_clip_norm=1.0):
     # 特征归一化
     embeddings = F.normalize(embeddings, p=2, dim=1)
-
     # 计算余弦相似度矩阵
     sim_matrix = embeddings @ embeddings.T / temperature
-
     # 构建正样本掩码
     pos_mask = torch.eq(labels.view(-1, 1), labels.view(1, -1)).bool()
     pos_mask.fill_diagonal_(False)
 
     with torch.no_grad():
         neg_scores = sim_matrix.masked_fill(pos_mask, -np.inf)  # 排除正样本
-
         if hard_neg:
             num_neg = neg_scores.shape[1] - 1
             k = min(topk, num_neg)
@@ -113,37 +110,31 @@ def supervised_infonce_loss(embeddings, labels, temperature=0.07,
         else:
             # 传统负样本模式（全量负样本）
             neg_mask = ~pos_mask
-
         # 过滤高相似度假正样本
         high_sim = sim_matrix > pos_threshold
         pos_mask &= ~high_sim  # 排除相似度过高的潜在假正样本
-
     # 对比损失计算
     exp_sim = torch.exp(sim_matrix)
-
     # 分子：正样本相似度聚合
     pos_term = (sim_matrix * pos_mask).sum(dim=1)
-
     # 分母：难负样本聚合
     neg_denominator = (exp_sim * neg_mask).sum(dim=1)
-
     # 处理分母为零的情况，防止log(0)导致无穷大
-    eps = 1e-8  # 一个小常数来避免除以零
-    neg_denominator = torch.max(neg_denominator, torch.tensor(eps, device=neg_denominator.device))
-
+    eps = torch.tensor(1e-8, device=neg_denominator.device)  # 一个小常数来避免除以零
+    neg_denominator = torch.max(neg_denominator, eps)
     # 处理分子为零的情况，防止log(0)导致无穷大
-    pos_term = torch.max(pos_term, torch.tensor(eps, device=pos_term.device))
-
+    pos_term = torch.max(pos_term, eps)
     # 损失计算
-    log_probs = -torch.log((exp_sim.diag() * pos_term) / (neg_denominator + eps))  # 加上一个小常数以避免除零
-
+    log_probs = -torch.log((pos_term) / (neg_denominator + eps))  # 直接用pos_term作为分子
     valid_pos = pos_mask.sum(dim=1).clamp(min=1)
     loss = (log_probs / valid_pos.float()).mean()
-
+    # 梯度裁剪
+    if grad_clip_norm > 0:
+        clip_grad_norm_(embeddings, grad_clip_norm)
     return loss
 
 
-def triplet_loss(fa_emb, labels, margin=1.0, topk=3):
+def triplet_loss(fa_emb, labels, margin=1.0, topk=3, grad_clip_norm=1.0):
     dist_mat = torch.cdist(fa_emb, fa_emb, p=2)  # [B, B]
 
     pos_mask = torch.eq(labels.view(-1, 1), labels.view(1, -1))  # 同类样本
@@ -166,7 +157,14 @@ def triplet_loss(fa_emb, labels, margin=1.0, topk=3):
                     loss = F.relu(dist_mat[i, hp] - dist_mat[i, hn] + margin)
                     losses.append(loss)
 
-    return torch.mean(torch.stack(losses)) if losses else torch.tensor(0.0)
+    total_loss = torch.mean(torch.stack(losses)) if losses else torch.tensor(0.0)
+
+    # 梯度裁剪
+    if grad_clip_norm > 0:
+        clip_grad_norm_(fa_emb, grad_clip_norm)
+
+    return total_loss
+
 
 
 
