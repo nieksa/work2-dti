@@ -1,6 +1,5 @@
-data/ppmi_npz/
+data/ppmi_npz/*/
 data/*.csv
-data/统计.ipynb
 logs/*/
 saved_models/
 runs/*
