@@ -21,9 +21,10 @@ import numpy as np
 
 
 class BaseDataset(Dataset):
-    def __init__(self, csv_file, args, transform=None):
+    def __init__(self, csv_file, args, transform=None, downsample_pd=None):
         self.csv_file = pd.read_csv(csv_file, dtype={'PATNO': 'str'})
         self.task = args.task
+        self.downsample_pd = downsample_pd  # 新增参数：指定PD类别要采样到的数量
 
         self.root_dir = "./data/ppmi_npz/"
         self.transform = transform
@@ -52,6 +53,20 @@ class BaseDataset(Dataset):
         valid_labels = list(task_mapping.keys())
         data = data[data['APPRDX'].isin(valid_labels)]
         data['APPRDX'] = data['APPRDX'].map(task_mapping)
+        
+        # 如果指定了降采样数量，且任务中包含PD类别（原始标签为1）
+        if self.downsample_pd is not None and 1 in valid_labels:
+            # 获取原始数据中PD类别的样本（APPRDX=1）
+            pd_data = data[data['APPRDX'].isin([task_mapping[1]])]  # 使用映射后的标签
+            other_data = data[~data['APPRDX'].isin([task_mapping[1]])]  # 获取其他类别的数据
+            
+            # 如果PD样本数量大于指定数量，进行随机采样
+            if len(pd_data) > self.downsample_pd:
+                pd_data = pd_data.sample(n=self.downsample_pd, random_state=42)
+            
+            # 合并采样后的PD数据和其他类别数据
+            data = pd.concat([pd_data, other_data])
+            
         return data
 
     def __len__(self):

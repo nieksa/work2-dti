@@ -46,20 +46,25 @@ def setup_training_environment():
     logging.info("Training configuration:")
     for arg, value in vars(args).items():
         logging.info(f"{arg}: {value}")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.cuda.device_count() > 1:
-        logging.info(f"Using {torch.cuda.device_count()} GPUs!")
-    logging.info(f"Training with {device}")
-    return args, device, log_file, timestamp
+
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # if torch.cuda.device_count() > 1:
+    #     logging.info(f"Using {torch.cuda.device_count()} GPUs!")
+    # logging.info(f"Training with {device}")
+    # return args, device, log_file, timestamp
+    return args, log_file, timestamp
 
 def main():
     seed = 42
-    args, device, log_file, timestamp = setup_training_environment()
+    # args, device, log_file, timestamp = setup_training_environment()
+    args, log_file, timestamp = setup_training_environment()
     args.debug = bool(args.debug)
     csv_file = 'data/data.csv'
 
     if args.work_type == "Contrastive":
-        dataset = ContrastiveDataset(csv_file, args)
+        transform = None
+        downsample_pd = 125
+        dataset = ContrastiveDataset(csv_file, args, transform=transform, downsample_pd=downsample_pd)
         trainer = ContrastiveTrainer(dataset, args, timestamp, seed=seed)
         trainer.start_training(log_file)
     # elif args.work_type == "Graph":
