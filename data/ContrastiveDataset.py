@@ -2,8 +2,8 @@
 from data.BaseDataset import BaseDataset
 
 class ContrastiveDataset(BaseDataset):
-    def __init__(self, csv_file, args, downsample_pd=None):
-        super().__init__(csv_file, args, downsample_pd=downsample_pd)
+    def __init__(self, csv_file, args, transform=None, downsample_pd=None):
+        super().__init__(csv_file, args, transform=transform, downsample_pd=downsample_pd)
 
     def __getitem__(self, idx):
         # 加载数据

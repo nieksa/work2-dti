@@ -60,10 +60,11 @@ class BaseDataset(Dataset):
             pd_data = data[data['APPRDX'].isin([task_mapping[1]])]  # 使用映射后的标签
             other_data = data[~data['APPRDX'].isin([task_mapping[1]])]  # 获取其他类别的数据
             
-            # 如果PD样本数量大于指定数量，进行随机采样
+            # 如果PD样本数量大于指定数量，进行采样
             if len(pd_data) > self.downsample_pd:
-                pd_data = pd_data.sample(n=self.downsample_pd, random_state=42)
-            
+                # pd_data = pd_data.sample(n=self.downsample_pd, random_state=42)# 随机采样
+                # pd_data = pd_data.head(self.downsample_pd)# 选择前N个
+                pd_data = pd_data.tail(self.downsample_pd)# 选择后N个
             # 合并采样后的PD数据和其他类别数据
             data = pd.concat([pd_data, other_data])
             
