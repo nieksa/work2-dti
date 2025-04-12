@@ -85,40 +85,7 @@ class Classifier(nn.Module):
         return self.fc(x)
     
 # 定义一个融合模块，把fa_embedding和mri_embedding融合起来然后再二分类的模块
-class FusionModule(nn.Module):
-    def __init__(self):
-        super(FusionModule, self).__init__()
-        # 注意力权重计算
-        self.attention = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1),
-            nn.Sigmoid()
-        )
-        # 分类器
-        self.classifier = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(64, 2)
-        )
-        
-    def forward(self, fa_emb, mri_emb):
-        # 计算注意力权重
-        fa_weight = self.attention(fa_emb)
-        mri_weight = self.attention(mri_emb)
-        
-        # 归一化权重
-        total = fa_weight + mri_weight
-        fa_weight = fa_weight / total
-        mri_weight = mri_weight / total
-        
-        # 加权融合
-        fused = fa_weight * fa_emb + mri_weight * mri_emb
-        
-        # 分类
-        out = self.classifier(fused)
-        return out
+
     
 class Simple3DViT(nn.Module):
     def __init__(self, in_channels=128, hidden_dim=128, num_heads=4):
@@ -164,7 +131,6 @@ class FA_MRI_contrastive_model(nn.Module):
         self.model_mri = ResNet(BasicBlock, [2, 2, 2, 2], input_shape=(91,109,91))
         self.fa_classifier = Classifier()
         self.mri_classifier = Classifier()
-        self.fusion_block = FusionModule()
         self.feature_map_to_heatmap = feature_map_to_heatmap()
         # 添加FA数据的下采样层
         self.fa_downsample = nn.Sequential(
@@ -177,7 +143,7 @@ class FA_MRI_contrastive_model(nn.Module):
         mri_embedding, mri_feature_map = self.model_mri(mri)
         fa_logit = self.fa_classifier(fa_embedding)
         mri_logit = self.mri_classifier(mri_embedding)
-        fusion_logit = self.fusion_block(fa_embedding, mri_embedding)
+        fusion_logit = fa_logit + mri_logit
         fa_heatmap, mri_heatmap = self.feature_map_to_heatmap(fa_feature_map, mri_feature_map)
         return fa_logit,fa_heatmap,fa_embedding,mri_logit,mri_heatmap,mri_embedding,fusion_logit
 

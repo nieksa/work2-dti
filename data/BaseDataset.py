@@ -20,6 +20,7 @@ import glob
 import numpy as np
 
 
+
 class BaseDataset(Dataset):
     def __init__(self, csv_file, args, transform=None, downsample_pd=None):
         self.csv_file = pd.read_csv(csv_file, dtype={'PATNO': 'str'})
@@ -72,12 +73,6 @@ class BaseDataset(Dataset):
 
     def __len__(self):
         return len(self.labels)
-        
-    def _shuffle_data(self):
-        # 打乱顺序，避免加载的时候同一类标签连续出现在一个batch中
-        combined = list(zip(self.subject_id, self.event_id, self.labels))
-        random.shuffle(combined)
-        self.subject_id, self.event_id, self.labels = zip(*combined)
 
     def __getitem__(self, idx):
         # 返回过滤后的数据（可以根据需要修改这里的返回内容）

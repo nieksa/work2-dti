@@ -263,11 +263,12 @@ class ContrastiveTrainer(BaseTrainer):
 
             # 2.使用三元组损失计算DTI数据的对比损失，因为DTI数据是各向异性的。
             from utils.contrastive_utils import triplet_loss
-            dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=5, grad_clip_norm=1.0)
-            # dti_loss = triplet_loss(fa_emb, pos_pairs, neg_pairs)
+            from utils.contrastive_utils import supervised_infonce_loss
+            # dti_loss = triplet_loss(fa_emb, labels, margin=1.0, topk=5, grad_clip_norm=1.0)
+            dti_loss = supervised_infonce_loss(fa_emb, labels, temperature=0.2,
+                            hard_neg=True, topk=5, pos_threshold=0.8, grad_clip_norm=1.0)
 
             # 3.使用InfoNCE损失计算MRI数据的对比损失，因为MRI数据是各向同性的。
-            from utils.contrastive_utils import supervised_infonce_loss
             nce_loss = supervised_infonce_loss(mri_emb, labels, temperature=0.2,
                             hard_neg=True, topk=5, pos_threshold=0.8, grad_clip_norm=1.0)
 
@@ -295,18 +296,21 @@ class ContrastiveTrainer(BaseTrainer):
             classification_loss_total += classification_loss.item()
             dti_loss_total += dti_loss.item()
             nce_loss_total += nce_loss.item()
+            cross_modal_loss_total += cross_modal_loss.item()
             ssim_loss_total += ssim_loss.item()
 
         avg_classification_loss = classification_loss_total / step
         avg_dti_loss = dti_loss_total / step
         avg_nce_loss = nce_loss_total / step
         avg_ssim_loss = ssim_loss_total / step
+        avg_cross_modal_loss = cross_modal_loss_total / step
 
         logging.info(
             f"Epoch {epoch + 1} - "
             f"Classification Loss (w={weights['classification']:.2f}): {avg_classification_loss:.4f}, "
             f"DTI Loss (w={weights['contrastive']:.2f}): {avg_dti_loss:.4f}, "
             f"MRI Loss (w={weights['contrastive']:.2f}): {avg_nce_loss:.4f}, "
+            f"Cross-Modal Loss (w={weights['cross_modal']:.2f}): {avg_cross_modal_loss:.4f}, "
             f"SSIM Loss (w={weights['ssim']:.2f}): {avg_ssim_loss:.4f}, "
         )
         self.scheduler.step()

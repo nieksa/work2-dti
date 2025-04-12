@@ -6,29 +6,33 @@ import random
 import torch
 
 class BalancedSampler(Sampler):
-    def __init__(self, dataset):
-        self.subject_id = dataset.subject_id
-        self.event_id = dataset.event_id
+    def __init__(self, dataset, replacement=True):
+        self.dataset = dataset
+        self.replacement = replacement
+        
+        # 计算每个类别的样本数量
         self.labels = dataset.labels
-
-        self.unique_labels = np.unique(self.labels)
-        self.label_counts = {label: np.sum(self.labels == label) for label in self.unique_labels}
-        self.weights = {label: 1.0 / self.label_counts[label] for label in self.unique_labels}
-
-    def __iter__(self): 
-        # 打乱数据顺序，确保每次加载顺序不同
-        combined = list(zip(self.subject_id, self.event_id, self.labels))
-        random.shuffle(combined)
-        self.subject_id, self.event_id, self.labels = zip(*combined)
-
-        # 根据权重对少数类进行过适当过采样  
-        # 计算每个类别的权重
-        weights = [self.weights[label] for label in self.labels]
+        self.unique_labels = torch.unique(self.labels)
+        self.label_counts = {label.item(): (self.labels == label).sum().item() 
+                            for label in self.unique_labels}
         
-        # 使用torch.utils.data.WeightedRandomSampler进行过采样
-        sampler = torch.utils.data.WeightedRandomSampler(weights, len(weights), replacement=True)   
-        
-        return iter(sampler)
+        # 计算每个样本的权重，少数类的样本权重更大
+        max_count = max(self.label_counts.values())
+        self.weights = torch.zeros(len(self.labels))
+        for label in self.unique_labels:
+            label = label.item()
+            mask = (self.labels == label)
+            self.weights[mask] = max_count / self.label_counts[label]
+            
+        # 创建权重采样器
+        self.sampler = torch.utils.data.WeightedRandomSampler(
+            self.weights, 
+            num_samples=len(self.labels),
+            replacement=replacement
+        )
+
+    def __iter__(self):
+        return iter(self.sampler)
     
     def __len__(self):
         return len(self.labels) 

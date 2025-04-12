@@ -9,3 +9,4 @@ __pycache__/
 venv/
 0_debug.sh
 1_run.sh
+analysis/*/
