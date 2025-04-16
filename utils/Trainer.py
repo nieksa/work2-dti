@@ -316,7 +316,43 @@ class ContrastiveTrainer(BaseTrainer):
         self.scheduler.step()
         return
 
+class SingleModalTrainer(BaseTrainer):
+    def __init__(self, dataset, args, timestamp, seed=42):
+        super().__init__(dataset, args, timestamp, seed)
 
+    def model_output(self, data):
+        data = data.to(torch.float32).to(self.device)
+        out_logit = self.model(data)
+        return out_logit
+
+    def train_epoch(self, epoch, train_loader):
+        self.model.train()
+        classification_loss_total = 0
+        step = 0
+        loss_function = torch.nn.CrossEntropyLoss()
+
+
+        for batch_idx, (data, labels) in tqdm(enumerate(train_loader), total=len(train_loader)):
+            self.optimizer.zero_grad()
+            data = data.to(torch.float32).to(self.device)
+            labels = labels.to(self.device)
+            out_logit = self.model(data)
+            step += 1
+            classification_loss = loss_function(out_logit, labels)
+            total_loss = classification_loss
+            total_loss.backward()
+            self.optimizer.step()
+            classification_loss_total += classification_loss.item()
+
+        avg_classification_loss = classification_loss_total / step
+
+        logging.info(
+            f"Epoch {epoch + 1} - "
+            f"Classification Loss : {avg_classification_loss:.4f}, "
+        )
+        self.scheduler.step()
+        return
+    
 class GraphTrainer(BaseTrainer):
     def __init__(self, dataset, args, timestamp, seed=42):
         super().__init__(dataset, args, timestamp, seed)
