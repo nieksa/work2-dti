@@ -4,7 +4,7 @@ tasks=("NCvsPD" "NCvsProdromal" "ProdromalvsPD")
 model="3D_ResNet18"
 for task in "${tasks[@]}"; do
   python main.py \
-  --work_type Contrastive \
+  --work_type SingleModal \
   --epochs 100 --bs 8 --num_workers 4 --lr 0.005 \
   --model_name "$model" --task "$task" \
   --debug 0 \

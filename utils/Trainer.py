@@ -236,13 +236,15 @@ class ContrastiveTrainer(BaseTrainer):
         dti_loss_total = 0
         nce_loss_total = 0
         ssim_loss_total = 0
+        cross_modal_loss_total = 0
         step = 0
         loss_function = torch.nn.CrossEntropyLoss()
 
         weights = {
             'contrastive': 0.3,
             'classification': 1,
-            'ssim': 0.3
+            'ssim': 0,
+            'cross_modal':0.3
         }
 
         for batch_idx, (data, labels) in tqdm(enumerate(train_loader), total=len(train_loader)):
@@ -288,7 +290,8 @@ class ContrastiveTrainer(BaseTrainer):
             ssim_loss = ssim_loss.detach()
             # print(f"ssim_loss:{ssim_loss}")
 
-            total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss + ssim_loss
+            # total_loss = classification_loss + dti_loss + nce_loss + cross_modal_loss + ssim_loss
+            total_loss = weights['classification']*classification_loss + weights['contrastive']*(dti_loss + nce_loss) + weights['cross_modal']*cross_modal_loss + weights['ssim']*ssim_loss
             # 7. 反向传播 + 优化
             total_loss.backward()
             self.optimizer.step()

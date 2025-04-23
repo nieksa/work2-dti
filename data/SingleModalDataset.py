@@ -15,4 +15,3 @@ class FADataset(BaseDataset):
         dti = self._load_dti(idx, 'FA')
 
         return dti, label
-

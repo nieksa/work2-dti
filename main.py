@@ -3,13 +3,13 @@ import torch
 import time
 import os
 import logging
-from data import ContrastiveDataset
-from utils.Trainer import ContrastiveTrainer, GraphTrainer
+from data import ContrastiveDataset, FADataset
+from utils.Trainer import ContrastiveTrainer, GraphTrainer, SingleModalTrainer
 
 def setup_training_environment():
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='Training script for models.')
-    parser.add_argument('--work_type', type=str, default="Contrastive", choices=['Contrastive', 'Graph'])
+    parser.add_argument('--work_type', type=str, default="Contrastive", choices=['Contrastive', 'Graph', 'SingleModal'])
     parser.add_argument('--model_name', type=str, default='contrastive_model2', help='Name of the model to use.')
 
     parser.add_argument('--task', type=str, default='NCvsPD', choices=['NCvsPD', 'ProdromalvsPD', 'NCvsProdromal', 'NCvsProdromalvsPD'])
@@ -71,6 +71,11 @@ def main():
     #     dataset = GraphDataset(csv_file, args)
     #     trainer = GraphTrainer(dataset, args, timestamp, seed=seed)
     #     trainer.start_training()
-
+    elif args.work_type == "SingleModal":
+        transform = None
+        downsample_pd = 125
+        dataset = FADataset(csv_file, args, transform=transform, downsample_pd=downsample_pd)
+        trainer = SingleModalTrainer(dataset, args, timestamp, seed=seed)
+        trainer.start_training(log_file)
 if __name__ == "__main__":
     main()
